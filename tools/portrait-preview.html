@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="sv"><head><meta charset="utf-8"><title>Porträtt</title>
+<style>body{margin:0;background:#2b3a55;font-family:sans-serif;color:#fff}.g{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:6px}.c{background:linear-gradient(#6b7fa8,#3b4a6b);border-radius:8px;overflow:hidden;position:relative}.c svg{width:100%;height:auto;display:block}.c span{position:absolute;left:6px;top:4px;font-size:12px;background:rgba(0,0,0,.5);padding:2px 6px;border-radius:4px}</style></head>
+<body><div class="g" id="g"></div>
+<script type="module">
+import { characterSVG, EXPRESSIONS, POSES } from '../js/art/character.js';
+import { makeRng } from '../js/core/util.js';
+import { makePerson } from '../js/sim/people.js';
+const q = new URLSearchParams(location.search);
+const rnd = makeRng(+(q.get('seed') || 7));
+const g = document.getElementById('g');
+const mode = q.get('mode') || 'people';
+if (mode === 'people') {
+  for (let i = 0; i < 10; i++) {
+    const p = makePerson(rnd, { gender: i % 2 ? 'k' : 'm' });
+    const d = document.createElement('div'); d.className = 'c';
+    d.innerHTML = characterSVG(p, { pose: POSES[i % POSES.length], expr: EXPRESSIONS[i % EXPRESSIONS.length], id: 'p' + i }) + `<span>${p.name} · ${p.look.hair} · ${POSES[i % POSES.length]} · ${EXPRESSIONS[i % EXPRESSIONS.length]}</span>`;
+    g.append(d);
+  }
+} else {
+  const p = makePerson(rnd, { gender: q.get('g') || 'm' });
+  if (q.get('hair')) p.look.hair = q.get('hair');
+  for (const e of EXPRESSIONS) {
+    const d = document.createElement('div'); d.className = 'c';
+    d.innerHTML = characterSVG(p, { pose: 'stand', expr: e, crop: 'head', id: 'x' + e }) + `<span>${e}</span>`;
+    g.append(d);
+  }
+}
+</script></body></html>
