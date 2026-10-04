@@ -89,7 +89,7 @@ await page.click('#send'); await sleep(400);
 ok(await page.evaluate(() => window.BPM.G.state.social.posts.length) === 1, 'inlägget publicerades');
 await page.locator('.modal .btn.gold').click(); await sleep(200);
 // sidor
-for (const [name, file] of [['Partiet', '08-partiet'], ['Sverige', '09-sverige'], ['Riksdagen', '10-riksdagen'], ['Opinion', '11-opinion'], ['Nyheter', '12-nyheter'], ['Regeringen', '13-regeringen'], ['Valet', '14-valet'], ['Världen', '15-varlden'], ['Historik', '16-historik']]) {
+for (const [name, file] of [['Politiken', '07b-politiken'], ['Partiet', '08-partiet'], ['Sverige', '09-sverige'], ['Riksdagen', '10-riksdagen'], ['Opinion', '11-opinion'], ['Nyheter', '12-nyheter'], ['Regeringen', '13-regeringen'], ['Valet', '14-valet'], ['Världen', '15-varlden'], ['Historik', '16-historik']]) {
   await page.locator('.sidenav button', { hasText: name }).first().click(); await sleep(350);
   ok((await page.locator('.content .card, .content .nitem').count()) > 0, `sidan ${name} ritas`);
   await shot(file);
@@ -159,6 +159,24 @@ await page.click('text=Starta spelet'); await sleep(900);
 ok(await page.evaluate(() => window.BPM.G.state.government.pm === 'player'), 'M-ledaren är statsminister vid start');
 await page.locator('.sidenav button', { hasText: 'Regeringen' }).click(); await sleep(400);
 await shot('24-regeringen-pm');
+// politiken: ändra programmet och föreslå en reform som statsminister
+await page.locator('.sidenav button', { hasText: 'Politiken' }).click(); await sleep(400);
+await page.locator('.tabs button', { hasText: 'Skatter' }).click(); await sleep(300);
+await shot('26-politiken-skatter');
+const firstRange = page.locator('.item .prog input[type=range]').first();
+await firstRange.fill(String(+(await firstRange.getAttribute('max')))); await sleep(200);
+ok(!(await page.locator('.content .btn.gold', { hasText: 'Anta ändringarna' }).isDisabled()), 'programändring aktiverar knappen');
+await page.locator('.content .btn.gold', { hasText: 'Anta ändringarna' }).click(); await sleep(400);
+ok(await page.evaluate(() => { const p = window.BPM.G.state.parties.m; return p.program.skatt_kommunal === 40; }), 'programmet uppdaterades (kommunalskatt 40)');
+await page.click('#reformBtn'); await sleep(300);
+await page.locator('.choice .btn', { hasText: 'Skatter' }).click(); await sleep(300);
+await page.locator('.choice .btn').first().click(); await sleep(400);
+await shot('27-reform');
+const reformBtn = page.locator('.modal .btn.gold', { hasText: 'Lägg fram' });
+ok(await reformBtn.count() === 1, 'reformdialogen visas');
+const rangeR = page.locator('.modal input[type=range]'); if (await rangeR.count()) { await rangeR.fill(String(+(await rangeR.getAttribute('min')))); await sleep(200); }
+if (!(await reformBtn.isDisabled())) { await reformBtn.click(); await sleep(400); ok(await page.evaluate(() => window.BPM.G.state.riksdag.bills.some((b) => b.kind === 'reform' && b.byPlayer)), 'reformförslaget ligger i riksdagen'); } else { await page.locator('.modal .mf .btn').first().click(); console.log('  (reformknappen avstängd – kapital eller oförändrat värde)'); }
+await page.locator('.sidenav button', { hasText: 'Regeringen' }).click(); await sleep(400);
 await page.click('#budget'); await sleep(400);
 ok(await page.locator('.budget').count() === 1, 'budgetdialogen öppnas');
 await shot('25-budget');

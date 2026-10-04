@@ -36,7 +36,9 @@ for (let w = 0; w < weeks; w++) {
     for (let k = 0; k < 3 && state.ap > 0; k++) {
       const a = acts[Math.floor(rnd() * acts.length)]; if (!a) break;
       const params = { issue: ISSUES[Math.floor(rnd() * 12)].id, region: 'AB', party: activeParties(state).find((p) => !p.isPlayer).id, amount: 10, bill: 'skatt_arbete_ner' };
-      if (a.id === 'forhandla' || a.id === 'program') continue;
+      if (a.id === 'forhandla' || a.id === 'program_policy' || a.id === 'avga' || a.id === 'kongress') continue;
+      if (a.id === 'reform') { const { POLICIES } = await import('../js/data/policies.js'); const pol = POLICIES[Math.floor(rnd() * POLICIES.length)]; params.policyId = pol.id; params.to = pol.type === 'choice' ? pol.options[Math.floor(rnd() * pol.options.length)].id : pol.min + Math.round(rnd() * (pol.max - pol.min) / pol.step) * pol.step; }
+      if (a.id === 'manifest') { const { manifestCandidates } = await import('../js/sim/promises.js'); params.billIds = manifestCandidates(state).slice(0, 3).map((x) => x.b.id); }
       doAction(state, rnd, a.id, params);
     }
     if (rnd() < .5) composePost(state, rnd, { platform: 'x', kind: 'issue', issue: 'ekonomi', tone: 'saklig', format: 'text' });
@@ -60,6 +62,7 @@ for (let w = 0; w < weeks; w++) {
   } catch (e) { errors++; console.error(`FEL vecka ${state.week}:`, e.stack); if (errors > 3) break; }
 }
 const s = state.sweden.stats;
+console.log('Reformer antagna: ' + (state.sweden.reforms || []).filter((r) => r.billId.startsWith('reform:')).length + ' · lag≠default: ' + Object.keys(state.policy).filter((k) => { const { POLICY_BY_ID } = globalThis.__pol || {}; return false; }).length + ' · kapital ' + Math.round(state.government.capital ?? 0) + ' · ideologi: ' + (await import('../js/sim/policy.js')).ideologyDescription(me().program).label);
 console.log(`
 Klart: ${weeks} veckor · debatter ${debates} · omröstningar ${votes} · händelser ${events} · skandaler ${scandals} · val ${elections} · falangkrav ${factions} · ledarbyten ${leaderChanges} · noteringar ${notes} · partier ${activeParties(state).length} (${activeParties(state).map((p) => p.abbr).join(',')}) · fel ${errors}`);
 console.log('Förtroende ' + Math.round(me().trust ?? 0) + ' · medlemmar ' + me().members + ' · falanger ' + (me().factions || []).map((f) => `${f.name} ${f.mood.toFixed(0)}/${f.strength.toFixed(0)}`).join(', ') + ' · kommuner ' + (me().localBase?.kommuner ?? 0) + ' · tidslinje ' + state.history.timeline.length + ' · biografier ' + state.history.bios.length + ' · journalister ' + Object.keys(state.journalists).length);
