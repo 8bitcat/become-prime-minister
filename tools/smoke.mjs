@@ -35,13 +35,37 @@ await page.locator('.panel >> text=Starta ett nytt parti').first().locator('..')
 await page.click('.btn.gold.big'); await sleep(300);
 ok(await page.locator('#pname').count() === 1, 'partiskaparen visas');
 await page.fill('#pname', 'Framtidspartiet'); await page.fill('#pabbr', 'FP'); await page.fill('#pslogan', 'Ett Sverige som vågar');
-await page.locator('#ideo .opt').nth(10).click(); await sleep(100);
+await shot('03a-parti-identitet');
+await page.click('.btn.gold.big'); await sleep(250); // → ideologi
+ok(await page.locator('#ideo .opt').count() > 0, 'ideologifliken visas');
+await page.locator('#fam button', { hasText: 'Övrigt' }).click(); await sleep(150);
+await page.locator('#ideo .opt', { hasText: 'Teknokrati' }).click(); await sleep(150);
+await page.locator('#sec .chip', { hasText: 'Socialliberalism' }).click(); await sleep(150);
+await shot('03b-parti-ideologi');
+await page.click('.btn.gold.big'); await sleep(250); // → politik
 await page.locator('#profile .chip').nth(11).click(); await page.locator('#profile .chip').nth(6).click();
-await shot('03-partiet');
-await page.click('.btn.gold.big'); await sleep(300);
+await shot('03c-parti-politik');
+await page.click('.btn.gold.big'); await sleep(250); // → organisation
+await page.locator('#ledarval .opt').nth(0).click(); await sleep(100);
+await shot('03d-parti-organisation');
+await page.click('.btn.gold.big'); await sleep(250); // → målgrupper
+await page.locator('#segs .opt').nth(1).click(); await page.locator('#segs .opt').nth(10).click();
+await shot('03e-parti-malgrupper');
+await page.click('.btn.gold.big'); await sleep(400); // → ledaren
 ok(await page.locator('#portrait svg').count() === 1, 'ledarskaparen med porträtt visas');
 await page.fill('#first', 'Elin'); await page.fill('#last', 'Westerberg');
-await shot('04-ledaren');
+await page.selectOption('#profession', 'sjukskoterska'); await sleep(150);
+await shot('04a-ledaren-person');
+await page.locator('.tabs button', { hasText: 'Utseende' }).click(); await sleep(250);
+await page.locator('#hair .chip').nth(10).click(); await sleep(150);
+await shot('04b-ledaren-utseende');
+await page.locator('.tabs button', { hasText: 'Kläder' }).click(); await sleep(250);
+await page.locator('#style .opt').nth(2).click(); await sleep(250);
+await shot('04c-ledaren-klader');
+await page.locator('.tabs button', { hasText: 'Personlighet' }).click(); await sleep(250);
+await page.locator('#pers .opt', { hasText: 'Humoristisk' }).click(); await page.locator('#pers .opt', { hasText: 'Empatisk' }).click(); await sleep(150);
+await shot('04d-ledaren-personlighet');
+ok(await page.evaluate(() => document.querySelector('#personaHint')?.textContent.includes('Elin')), 'personasammanfattningen uppdateras');
 await page.click('.btn.gold.big'); await sleep(300);
 ok(await page.locator('.saves .save').count() === 3, 'sparplatser visas');
 await page.locator('.saves .save').first().click(); await sleep(100);
@@ -49,6 +73,8 @@ await shot('05-starta');
 await page.click('text=Starta spelet'); await sleep(900);
 ok(await page.locator('.game').count() === 1, 'spelet startade');
 ok(await page.evaluate(() => window.BPM.G.state.parties.ny.name) === 'Framtidspartiet', 'partiet finns i tillståndet');
+ok(await page.evaluate(() => window.BPM.G.state.parties.ny.ideology.primary === 'teknokrati' && window.BPM.G.state.parties.ny.structure.ledarval === 'medlem' && window.BPM.G.state.parties.ny.structure.malgrupper.length === 2), 'ideologi, stadgar och målgrupper sparades');
+ok(await page.evaluate(() => { const l = window.BPM.G.state.people.player; return l.persona.profession === 'sjukskoterska' && l.persona.personality.includes('humoristisk') && l.cred.valfard > 0; }), 'ledarens persona och trovärdighet sparades');
 ok(await page.evaluate(() => !!localStorage.getItem('bpm_save_1')), 'sparades automatiskt på plats 1');
 await shot('06-oversikt');
 
@@ -68,6 +94,12 @@ for (const [name, file] of [['Partiet', '08-partiet'], ['Sverige', '09-sverige']
   ok((await page.locator('.content .card, .content .nitem').count()) > 0, `sidan ${name} ritas`);
   await shot(file);
 }
+// kongressdialogen
+await page.locator('.sidenav button', { hasText: 'Partiet' }).click(); await sleep(300);
+await page.click('#kongress'); await sleep(300);
+ok(await page.locator('.modal #cent').count() === 1, 'kongressdialogen öppnas');
+await shot('08b-kongress');
+await page.locator('.modal .mf .btn').first().click(); await sleep(200);
 // nästa vecka ×3 med rapporter/händelser
 await page.locator('.sidenav button', { hasText: 'Översikt' }).click(); await sleep(200);
 for (let w = 0; w < 6; w++) {
@@ -119,7 +151,7 @@ ok(await page.locator('.aa').count() === 0, 'debatten avslutades');
 await page.evaluate(() => window.BPM.showStart()); await sleep(300);
 await page.click('#new'); await sleep(300);
 await page.locator('.pick .opt', { hasText: 'Moderaterna' }).click(); await sleep(200);
-await page.click('.btn.gold.big'); await sleep(300);
+await page.click('.btn.gold.big'); await sleep(400);
 await page.fill('#first', 'Karl'); await page.fill('#last', 'Testare');
 await page.click('.btn.gold.big'); await sleep(300);
 await page.locator('.saves .save').nth(1).click(); await sleep(100);
