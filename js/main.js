@@ -5,10 +5,11 @@ import { renderSetup } from './ui/setup.js';
 import { UI, processQueue } from './ui/game.js';
 import { newGame } from './sim/newgame.js';
 import { toast } from './ui/modal.js';
+import { migrate } from './sim/migrate.js';
 
 function showStart() { G.state = null; renderStart({ onNew: showSetup, onLoad: startSlot }); }
 function showSetup() { renderSetup({ onDone: (def) => { const { state, rnd } = newGame(def); G.state = state; G.rnd = rnd; G.slot = def.slot; save(); enterGame(); }, onCancel: showStart }); }
-function startSlot(slot) { try { if (!load(slot)) return toast('Sparningen kunde inte läsas.', 'bad'); enterGame(); } catch (e) { console.error(e); toast('Sparningen är skadad: ' + e.message, 'bad'); } }
+function startSlot(slot) { try { if (!load(slot)) return toast('Sparningen kunde inte läsas.', 'bad'); const from = migrate(G.state); if (from < G.state.v) { save(); toast('Sparningen uppgraderades till det nya formatet.', 'good'); } enterGame(); } catch (e) { console.error(e); toast('Sparningen är skadad: ' + e.message, 'bad'); } }
 async function enterGame() {
   UI.onExit = showStart;
   UI.page = 'oversikt';

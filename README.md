@@ -20,12 +20,22 @@ node tools/serve.mjs 8790     # http://localhost:8790/
 Allt sparas automatiskt i webbläsaren (tre sparplatser) efter varje handling och vecka.
 Sparfilen kan exporteras/importeras som JSON från menyn.
 
-## Innehåll (v0.1)
+## Innehåll
 
 - **Två vägar**: ta över S, SD, M, V, C, KD, MP eller L (fiktiva partiledare) – eller skapa ett nytt
-  parti med namn, logotyp, färger, slogan, ideologi på tolv axlar och hjärtefrågor.
-- **Partiledaren**: utseende (anime-porträtt), bakgrund, tio egenskaper (karisma, retorik, lugn, …)
-  som styr debatter, kriser, förhandlingar och skandalrisk.
+  parti i fem steg: identitet, ideologi (51 ideologier, huvud + sekundära, med konsekvenser),
+  finjusterad politik på tolv axlar och hjärtefrågor, organisation (centralisering, ledarmakt,
+  ledarval, kandidatval, stadgar, ungdomsförbund, lokal autonomi, bredd) och målgrupper.
+- **Partiledaren**: vanliga människor i anime-grafik – kroppstyp, 19 frisyrer, 27 plagg med egna
+  färger, ansiktsdetaljer, stil, röst, kroppsspråk, 40 yrken med trovärdighet i sakfrågor, politisk
+  erfarenhet, familj, livsåskådning, personlighetsdrag och offentlig image (äkthet). Tio egenskaper
+  styr debatter, kriser, förhandlingar och skandalrisk.
+- **Partiets inre liv**: falanger, partiledarstrider, partisplittringar som föder nya partier,
+  aktivister, partikongresser, ekonomi rad för rad. Lämna posten och fortsätt med en efterträdare.
+- **Förtroende & löften**: valmanifest, löfteskollen, förtroende skilt från popularitet.
+- **Medier som individer**: journalister med bevakningsområde, relation och minne; politiska
+  influerare och poddar. Kommun- och regionval. AI-partier som föds och dör. Historik med tidslinje
+  och biografier.
 - **Veckoloop** med handlingspoäng: presskonferens, turné, utspel, angrepp, medlemsvärvning,
   insamling, organisation, partiprogram, motioner, förhandlingar, relationer, kampanjhandlingar.
 - **Sverige** simuleras månadsvis: ~150 nationella mätserier (ekonomi, finanser, skatter, utgifter,

@@ -21,10 +21,12 @@ export function ideologicalDistance(a, b) {
 // Vill parti q samarbeta med parti p? Avstånd, kordong, relationer, storlek.
 export function willingness(state, q, p) {
   if (q.id === p.id) return 100;
+  if ((p.demo ?? 0) <= -2 || (q.demo ?? 0) <= -2) return -80; // antidemokratiska partier isoleras
   if ((q.cordon || []).includes(p.id) || (p.cordon || []).includes(q.id)) return -40;
+  if (p.ext >= 3 || q.ext >= 3) return -50;
   const d = ideologicalDistance(q, p);
   const rel = q.relations?.[p.id] || 0;
-  let w = 70 - d * 1.2 + rel * .5 + (q.bloc === p.bloc && q.bloc !== 'none' ? 25 : 0);
+  let w = 70 - d * 1.2 + rel * .5 + (q.bloc === p.bloc && q.bloc !== 'none' ? 25 : 0) - (p.ext === 2 ? 25 : 0) - (p.ext === 1 && q.ext === 0 ? 5 : 0);
   if (p.isPlayer && (p.credibility < 45)) w -= (45 - p.credibility);
   if (!p.inRiksdag) w -= 30;
   return clamp(w, -50, 100);

@@ -7,20 +7,44 @@ import { REGIONS } from '../data/regions.js';
 import { POLL_INSTITUTES } from '../data/names.js';
 import { clamp, gauss } from '../core/util.js';
 import { economyMood, securityMood, welfareMood } from './sweden.js';
+import { structureEffects } from './party.js';
+import { STYLES, PUBLIC_IMAGE } from '../data/persona.js';
+import { IDEOLOGY_BY_ID } from '../data/ideologies.js';
 
 export const activeParties = (state) => Object.values(state.parties).filter((p) => p.active !== false);
 
+// Hur väl partiledarens offentliga image stämmer med personligheten (0…1)
+export function authenticity(person) {
+  const pe = person?.persona; if (!pe) return .7;
+  const img = PUBLIC_IMAGE.find((x) => x.id === pe.image); if (!img) return .7;
+  const fits = img.fits.filter((f) => (pe.personality || []).includes(f) || pe.style === f || pe.voice === f || pe.bodyLanguage === f).length;
+  return clamp(.25 + fits * .3, 0, 1);
+}
+
 function partyScore(state, p, sg, sal, prevShare) {
-  let dist = 0, wsum = 0;
+  const eff = p._eff || (p._eff = structureEffects(p));
+  let dist = 0, wsum = 0, cred = 0;
+  const leader = state.people[p.leader];
   for (const is of ISSUES) {
     const w = (sg.w[is.id] || 1) * (sal[is.id] || 1) * (p.profile?.[is.id] ? 1 + (p.profile[is.id] - 1) * .3 : 1);
     dist += w * Math.abs((p.pos[is.id] || 0) - (sg.ideal[is.id] || 0)); wsum += w;
+    if (leader?.cred?.[is.id]) cred += w * leader.cred[is.id];
   }
-  dist /= wsum;
-  let score = -dist / 20;
-  const leader = state.people[p.leader];
-  if (leader) score += sg.leader * (((leader.traits.karisma - 45) / 100) * 1.1 + ((leader.approval - 40) / 100) * 1.2);
-  score += ((p.credibility - 50) / 100) * .9;
+  dist /= wsum; cred /= wsum;
+  let score = -dist / (20 * eff.tolerance) + (cred / 100) * 1.2;
+  if (leader) {
+    score += sg.leader * (((leader.traits.karisma - 45) / 100) * 1.1 + ((leader.approval - 40) / 100) * 1.2);
+    const st = STYLES.find((s) => s.id === leader.persona?.style); if (st?.seg?.[sg.id]) score += Math.log(st.seg[sg.id]);
+    const auth = authenticity(leader); if (auth < .5) score -= (0.5 - auth) * .4;
+    if (leader.persona?.experience === 'ingen' && (sg.id === 'laginkomst' || sg.id === 'landsbygd' || sg.id === 'storstad_unga')) score += .12;
+  }
+  score += ((p.credibility - 50) / 100) * .9 * eff.cred + (((p.trust ?? 50) - 50) / 100) * .5;
+  const mg = p.structure?.malgrupper || [];
+  if (mg.length) score += mg.includes(sg.id) ? .18 - mg.length * .02 : -.03;
+  if (p.ext >= 2 || (p.demo ?? 0) <= -1) {
+    const tags = new Set([p.ideology?.primary, ...(p.ideology?.secondary || [])].map((id) => IDEOLOGY_BY_ID[id]).filter(Boolean).flatMap((i) => i.tags));
+    score -= (p.ext >= 3 ? 1.1 : .35) * (tags.has(sg.id) ? .4 : 1) + ((p.demo ?? 0) <= -2 ? .6 : (p.demo ?? 0) < 0 ? .2 : 0);
+  }
   score += (p.momentum || 0) * .12;
   score += sg.media * ((p.attention - 40) / 100) * .45;
   if (state.government.parties.includes(p.id)) {
@@ -29,7 +53,7 @@ function partyScore(state, p, sg, sal, prevShare) {
   }
   const scandal = (state.scandals || []).filter((x) => x.active && x.partyId === p.id).reduce((a, x) => a + x.severity, 0);
   score -= (scandal / 100) * 1.6 * sg.media;
-  score += Math.log(Math.max(prevShare, .05) + .3) * .55; // lojalitet
+  score += Math.log(Math.max(prevShare, .05) + .3) * .55 * eff.loyalty; // lojalitet
   score += Math.log(clamp(state.opinion.awareness[p.id] ?? 1, .002, 1)) * 1.1; // kännedom
   score += p.base || 0; // varumärke/historia
   if (sg.id === 'laginkomst' || sg.id === 'landsbygd') score += (p.antiElite || 0) * .3;
@@ -38,6 +62,7 @@ function partyScore(state, p, sg, sal, prevShare) {
 
 export function updateOpinion(state, { inertia = .82, calibrating = false } = {}) {
   const parties = activeParties(state);
+  for (const p of parties) p._eff = structureEffects(p);
   const op = state.opinion;
   const sal = op.salience;
   op.seg ||= {};
@@ -64,6 +89,7 @@ export function updateOpinion(state, { inertia = .82, calibrating = false } = {}
     p.momentum = calibrating ? 0 : clamp(((p.momentum || 0) * .75) + (national[p.id] - prevS) * .12, -1.5, 1.5);
   }
   op.support = national;
+  for (const p of parties) delete p._eff;
   if (!calibrating) {
     (op.trend ||= []).push({ week: state.week, s: Object.fromEntries(parties.map((p) => [p.id, Math.round(national[p.id] * 10) / 10])) });
     if (op.trend.length > 520) op.trend.shift();

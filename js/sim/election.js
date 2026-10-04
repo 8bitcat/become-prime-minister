@@ -62,10 +62,20 @@ export function computeElection(state, rnd) {
   let popT = 0;
   for (const r of REGIONS) { popT += r.pop; for (const p of parties) final[p.id] = (final[p.id] || 0) + regions[r.id].res[p.id] * r.pop; }
   for (const k in final) final[k] = final[k] / popT;
-  const seats = sainteLague(final, RIKSDAG_SEATS);
+  const seats = sainteLague(final, RIKSDAG_SEATS, { threshold: state.flags.threshold3 ? 3 : THRESHOLD });
   const order = shuffle(rnd, REGIONS.map((r) => r.id)); // i vilken ordning länen "rapporterar"
-  return { date: { ...state.date }, year: state.date.y, result: final, seats, regions, turnout: Math.round(turnout * 10) / 10, order, prev: state.election.last?.result || null, prevSeats: { ...state.riksdag.seats } };
+  // kommun- och regionval samma dag: regionfullmäktige per län (3 %-spärr) + uppskattat antal kommuner med mandat
+  const regionSeats = {}, kommuner = {};
+  for (const r of REGIONS) {
+    const n = clamp(Math.round(r.pop / 18), 31, 149);
+    regionSeats[r.id] = sainteLague(regions[r.id].res, n, { threshold: 3 });
+    for (const p of parties) { const share = regions[r.id].res[p.id]; const pr = clamp((share - 2) / 4, 0, 1); kommuner[p.id] = (kommuner[p.id] || 0) + (KOMMUNER[r.id] || 10) * pr; }
+  }
+  for (const k in kommuner) kommuner[k] = Math.round(kommuner[k]);
+  return { date: { ...state.date }, year: state.date.y, result: final, seats, regions, turnout: Math.round(turnout * 10) / 10, order, prev: state.election.last?.result || null, prevSeats: { ...state.riksdag.seats }, local: { regionSeats, kommuner } };
 }
+const KOMMUNER = { AB: 26, C: 8, D: 9, E: 13, F: 13, G: 8, H: 12, I: 1, K: 5, M: 33, N: 6, O: 49, S: 16, T: 12, U: 10, W: 15, X: 10, Y: 7, Z: 8, AC: 15, BD: 14 };
+export const TOTAL_KOMMUNER = 290;
 function dist(a, b) { let d = 0; for (const k in a.pos) d += Math.abs(a.pos[k] - (b.pos[k] || 0)); return d; }
 
 // Tillämpa valresultatet på världen
@@ -74,6 +84,7 @@ export function applyElection(state, el) {
   for (const p of activeParties(state)) {
     p.seats = el.seats[p.id] || 0; p.inRiksdag = p.seats > 0; p.lastResult = el.result[p.id];
     (p.results ||= []).push({ year: el.year, pct: Math.round(el.result[p.id] * 10) / 10, seats: p.seats });
+    if (el.local) { const rs = {}; for (const rid in el.local.regionSeats) if (el.local.regionSeats[rid][p.id]) rs[rid] = el.local.regionSeats[rid][p.id]; p.localBase = { kommuner: el.local.kommuner[p.id] || 0, regionSeats: rs }; if (p.localBase.kommuner > 0) { p.org = clamp(p.org + Math.min(10, p.localBase.kommuner / 10), 0, 100); if (!p.inRiksdag) state.opinion.awareness[p.id] = clamp(Math.max(state.opinion.awareness[p.id] || 0, .25 + p.localBase.kommuner / 400), 0, 1); } }
     if (p.inRiksdag) { p.credibility = clamp(p.credibility + 4, 0, 100); state.opinion.awareness[p.id] = 1; }
     else if (state.opinion.awareness[p.id] < 1) state.opinion.awareness[p.id] = clamp(state.opinion.awareness[p.id] + el.result[p.id] / 25, 0, 1);
     // valresultatet blir ny "sanning" för opinionen: lojaliteten nollas mot resultatet
@@ -85,7 +96,10 @@ export function applyElection(state, el) {
   state.opinion.support = { ...el.result };
   state.sweden.stats.valdeltagande = el.turnout;
   state.election.last = el;
-  (state.election.history ||= []).push({ year: el.year, result: el.result, seats: el.seats, turnout: el.turnout });
+  (state.election.history ||= []).push({ year: el.year, result: el.result, seats: el.seats, turnout: el.turnout, local: el.local ? { kommuner: el.local.kommuner } : null });
+  (state.history ||= { leaders: [], timeline: [], bios: [] }).timeline.push({ date: { ...state.date }, week: state.week, kind: 'val', text: `Riksdagsval ${el.year}: ${activeParties(state).map((p) => ({ p, v: el.result[p.id] })).sort((a, b) => b.v - a.v).slice(0, 4).map((x) => `${x.p.abbr} ${x.v.toFixed(1).replace('.', ',')} %`).join(', ')}.` });
+  // partier som inte nått någonstans på två val tynar bort
+  for (const p of activeParties(state)) { if (p.isPlayer || p.inRiksdag) continue; const r = p.results.slice(-2); if (r.length === 2 && r.every((x) => x.pct < 1) && (p.localBase?.kommuner || 0) < 3) { p.active = false; p.dissolved = { ...state.date }; state.history.timeline.push({ date: { ...state.date }, week: state.week, kind: 'parti', text: `${p.name} läggs ned efter två misslyckade val.` }); } }
   state.election.next = nextElectionDay(el.year + 4);
   state.election.campaign = false;
   state.election.debatesDone = [];

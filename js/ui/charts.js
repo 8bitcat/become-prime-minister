@@ -61,5 +61,6 @@ export function seatBar(seats, parties, total = 349) {
 }
 
 export function barRow(label, value, max, color = 'var(--gold)', text = null) {
-  return `<div class="pbar" style="margin:4px 0"><span style="width:120px;font-size:13px">${esc(label)}</span><div class="bar"><i style="width:${Math.max(0, Math.min(100, (value / max) * 100))}%;background:${color}"></i></div><b style="width:60px;text-align:right;font-size:13px">${esc(text ?? value)}</b></div>`;
+  const shown = text ?? (typeof value === 'number' ? String(Math.round(value)) : value);
+  return `<div class="pbar" style="margin:4px 0"><span style="width:120px;font-size:13px">${esc(label)}</span><div class="bar"><i style="width:${Math.max(0, Math.min(100, (value / max) * 100))}%;background:${color}"></i></div><b style="width:60px;text-align:right;font-size:13px">${esc(shown)}</b></div>`;
 }

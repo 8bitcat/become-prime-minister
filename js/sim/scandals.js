@@ -24,8 +24,12 @@ export function partyRisk(state, p) {
   if (state.government.parties.includes(p.id)) r += 4;
   if (state.election.campaign) r *= 1.5;
   if (l?.traits.aggressivitet > 65) r += 2;
-  return r; // "risk per vecka" i promille ≈ r/1000 … skalas nedan
+  if (l?.persona?.personality?.includes('impulsiv')) r += 2;
+  if (l?.persona?.personality?.includes('disciplinerad')) r -= 1.5;
+  r *= structureEffects(p).scandal;
+  return Math.max(1, r); // "risk per vecka" i promille ≈ r/1000 … skalas nedan
 }
+import { structureEffects } from './party.js';
 
 export function rollScandals(state, rnd) {
   const out = [];
@@ -76,6 +80,8 @@ export function respondScandal(state, rnd, sc, choice) {
   if (personal && choice === 'avskeda') mult = 1.2;
   sc.severity = Math.round(sc.severity * mult); sc.peak = Math.max(sc.peak, sc.severity); sc.responded = true; sc.response = choice;
   p.unity = clamp(p.unity + unity, 0, 100); p.credibility = clamp(p.credibility + cred, 0, 100);
+  // förtroende: ärlighet belönas, avslöjade lögner straffas hårt
+  p.trust = clamp((p.trust ?? 50) + (choice === 'erkann' ? 2 : choice === 'forneka' && mult > 1 ? -8 : choice === 'forneka' ? 1 : choice === 'motattack' && mult > 1 ? -4 : 0), 0, 100);
   return { text, severity: sc.severity };
 }
 function aiRespond(state, rnd, sc) { const c = pick(rnd, ['erkann', 'utredning', 'avskeda', 'forneka', 'tyst']); respondScandal(state, rnd, sc, c); }

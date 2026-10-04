@@ -1,17 +1,20 @@
-// Debatter, intervjuer och utfrågningar – innehållet. Presentationen (anime-scenen) ligger i scene/debate.js.
+// Debatter, intervjuer, utfrågningar och poddar – innehållet. Presentationen ligger i scene/debate.js.
 // En debatt = rundor. Varje runda: motståndarens påstående → dina alternativ → utfall → mätaren rör sig.
 import { ISSUES, ISSUE_BY_ID } from '../data/issues.js';
 import { SEGMENTS } from '../data/segments.js';
-import { JOURNALISTS, MEDIA } from '../data/names.js';
+import { MEDIA } from '../data/names.js';
 import { STAT_BY_ID } from '../data/stats.js';
+import { VOICES, BODY_LANGUAGE } from '../data/persona.js';
 import { clamp, pick, fmt, weighted } from '../core/util.js';
-import { activeParties } from './opinion.js';
+import { activeParties, authenticity } from './opinion.js';
 import { addNews } from './news.js';
 import { makePerson } from './people.js';
+import { pickJournalist, adjustJournalist } from './media.js';
+import { BILLS } from './riksdag.js';
 
 const me = (s) => s.parties[s.player.partyId];
+const BILL_AREA = Object.fromEntries(BILLS.map((b) => [b.id, b]));
 
-// Fraser per fråga. L = vänstersidan av axeln, R = högersidan.
 const PHRASES = {
   ekonomi: { L: ['Sverige behöver en stark gemensam välfärd – inte fler skattesänkningar för de rikaste.', 'Varje skattesänkning är en nedskärning i vården och skolan. Det vet {parti}.'], R: ['Vanligt folk ska få behålla mer av sin lön. {parti} vill bara höja skatterna.', 'Tillväxt skapas av företag och arbete, inte av större offentlig sektor.'], stat: ['arbetsloshet', 'inflation', 'bnp_tillvaxt', 'statsskuld_bnp'] },
   migration: { L: ['Sverige ska vara ett land som tar ansvar och ger skydd åt människor på flykt.', 'Integrationen misslyckas inte på grund av invandrarna, utan på grund av bristande satsningar.'], R: ['Invandringen måste minska kraftigt. Vi klarar inte mer av det här.', 'Krav är inte hårt – krav är respekt. {parti} vill fortsätta som förut.'], stat: ['asylsokande', 'integration', 'andel_utrikes_fodda', 'arbetsloshet'] },
@@ -27,10 +30,13 @@ const PHRASES = {
   energi: { L: ['Kärnkraft tar femton år och kostar hundratals miljarder. Vindkraften är här nu.', '{parti} drömmer om reaktorer medan elräkningarna rusar.'], R: ['Utan ny kärnkraft får Sverige aldrig stabila elpriser.', 'Vindkraft fungerar inte när det är vindstilla i januari.'], stat: ['elpris', 'el_karnkraft', 'el_vind', 'fornybart'] },
 };
 const KANSLA = ['Jag har träffat människor över hela landet som berättar samma sak: det här fungerar inte. Jag tänker inte svika dem.', 'Det handlar inte om siffror. Det handlar om människor. Om familjer. Om framtiden.', 'Jag gick in i politiken för exakt det här. Och jag kommer inte att ge upp.'];
+const KANSLA_PERSONAL = { student: 'Jag pluggade med studielån och visste exakt vad en liter mjölk kostade. Det har jag inte glömt.', lantbrukare: 'Jag har stått i ladugården klockan fem. Jag vet vad det kostar att hålla ett land vid liv.', sjukskoterska: 'Jag har jobbat nattpass på akuten. Fråga mig inte om vårdköer – fråga mig vad de gör med människor.', polis: 'Jag har knackat på dörren hos föräldrar vars barn skjutits. Det är inte statistik för mig.', larare: 'Jag har haft 32 elever i klassrummet. Jag vet vad som händer när resurserna inte räcker.', officer: 'Jag har tjänstgjort. Jag vet vad beredskap betyder när det inte längre är en budgetpost.', industri: 'Jag har stått vid bandet när varslet kom. Så jag vet hur det känns.', fack: 'Jag har förhandlat för folk som inte hade någon annan som talade för dem.' };
 const ANGREPP = ['Ni har haft chansen i åratal. Vad har ni gjort? Ingenting!', 'Det där är helt enkelt inte sant, och det vet du.', 'Du kan inte ens svara på en enkel fråga. Hur ska väljarna kunna lita på dig?'];
 const KOMPROMISS = ['Jag tror vi är överens om målet, även om vi ser olika på vägen dit. Låt oss hitta en lösning.', 'Det finns kloka tankar i det du säger. Men jag vill lägga till en sak.', 'Jag förstår oron. Därför föreslår vi ett steg i taget, med utvärdering.'];
+const HUMOR = ['Det där lät nästan som ett förslag. Nästan. Kan vi få se det på papper också?', 'Jag hörde att ni hade en plan. Jag hörde det 2018 också.', 'Om löften vore valuta skulle ni ha betalt av statsskulden vid det här laget.'];
 const REACT_WIN = ['Publiken applåderar.', 'Motståndaren tappar tråden.', 'Moderatorn höjer på ögonbrynen.', 'Det blir tyst i studion.'];
 const REACT_LOSE = ['Motståndaren ler.', 'Publiken mumlar.', 'Argumentet faller platt.', 'Moderatorn går vidare.'];
+let G = Math.random;
 
 function sideOf(party, issue) { return (party.pos[issue] || 0) < 0 ? 'L' : 'R'; }
 function statLine(state, issue) {
@@ -42,9 +48,6 @@ function statLine(state, issue) {
   const unit = st.unit.replace(/^antal\/år$/, 'per år').replace(/^tusen\/år$/, 'tusen per år').replace(/^mdkr\/år$/, 'miljarder per år');
   return { id, text: `Fakta: ${st.name.toLowerCase()} ligger på ${fmt(v, st.d)} ${unit}${trend ? ` och har ${trend} det senaste året` : ''}. ${trend ? 'Det är resultatet av den förda politiken.' : 'Det är verkligheten vi måste utgå från.'}` };
 }
-let G = Math.random;
-
-// Välj motståndare: i riksdagsdebatt statsministern/oppositionsledaren, i TV den som är hetast
 function pickOpponent(state, rnd) {
   const mine = me(state);
   const others = activeParties(state).filter((p) => !p.isPlayer && p.inRiksdag);
@@ -52,17 +55,21 @@ function pickOpponent(state, rnd) {
   if (gov.pm && gov.pm !== state.player.leaderId && rnd() < .5) return state.parties[gov.pmParty];
   return weighted(rnd, others, (p) => (state.riksdag.seats[p.id] || 1) * (1 + Math.abs(p.relations?.[mine.id] || 0) / 50) * (1 + p.attention / 50));
 }
+const hasTrait = (l, id) => (l.persona?.personality || []).includes(id);
 
-export function buildDebate(state, rnd, { kind = 'tv', host = null, campaign = false, name = null, issue = null } = {}) {
+export function buildDebate(state, rnd, { kind = 'tv', host = null, campaign = false, name = null, issue = null, influencer = null } = {}) {
   G = rnd;
   const mine = me(state), leader = state.people[mine.leader];
-  const d = { kind, host: host || (kind === 'riksdag' ? 'riksdag' : pick(rnd, ['svt', 'tv4', 'aftonbladet'])), campaign, name: name || (kind === 'riksdag' ? 'Partiledardebatt i riksdagen' : kind === 'interview' ? 'Utfrågning' : 'TV-debatt'), rounds: [], meter: 0, log: [], done: false, result: null };
-  if (kind === 'interview') {
-    const j = pick(rnd, JOURNALISTS);
-    const jp = makePerson(rnd, { gender: /a$|e$|n$/.test(j.name.split(' ')[0]) && !['Johan', 'Jakob', 'Oskar', 'Peter', 'Fredrik'].includes(j.name.split(' ')[0]) ? 'k' : 'm', age: 35 + Math.floor(rnd() * 25) });
-    jp.name = j.name; jp.first = j.name.split(' ')[0];
-    jp.look.outfit = pick(rnd, ['kostym_gra', 'blazer_bla', 'drakt_svart', 'polo']);
-    d.opponent = jp; d.opponentParty = null; d.journalist = j; d.host = j.outlet; d.name = `${MEDIA[j.outlet].name} – utfrågning`;
+  const d = { kind, host: host || (kind === 'riksdag' ? 'riksdag' : pick(rnd, ['svt', 'tv4', 'aftonbladet'])), campaign, name: name || (kind === 'riksdag' ? 'Partiledardebatt i riksdagen' : kind === 'interview' ? 'Utfrågning' : 'TV-debatt'), rounds: [], meter: 0, log: [], done: false, result: null, journalistId: null, influencerId: null };
+  if (influencer && state.influencers?.[influencer]) {
+    const inf = state.influencers[influencer];
+    const host2 = makePerson(rnd, { age: 28 + Math.floor(rnd() * 20), role: 'journalist' }); host2.name = inf.name; host2.look.outfit = pick(rnd, ['hoodie', 'tshirt', 'kavaj_tshirt', 'stickad']);
+    d.kind = 'podd'; d.opponent = host2; d.opponentParty = null; d.influencerId = inf.id; d.host = 'flashback'; d.name = `${inf.name} – ${inf.platform === 'podd' ? 'podden' : 'kanalen'}`;
+    d.rounds = buildPoddRounds(state, rnd, inf);
+  } else if (kind === 'interview') {
+    const j = pickJournalist(state, rnd, issue);
+    const jp = j ? state.people[j.personId] : makePerson(rnd, { age: 40, role: 'journalist' });
+    d.opponent = jp; d.opponentParty = null; d.journalistId = j?.id || null; d.host = j?.outlet || 'svt'; d.name = `${MEDIA[d.host]?.name || 'Studion'} – utfrågning`;
     d.rounds = buildInterviewRounds(state, rnd, j, issue);
   } else {
     const op = pickOpponent(state, rnd);
@@ -75,60 +82,62 @@ export function buildDebate(state, rnd, { kind = 'tv', host = null, campaign = f
   state.stats.debates++;
   return d;
 }
-
+function baseOptions(state, rnd, issue) {
+  const leader = state.people[me(state).leader];
+  const st = statLine(state, issue);
+  const options = [
+    { type: 'fakta', label: 'Fakta', text: st.text, stat: st.id },
+    { type: 'kansla', label: 'Känsla', text: KANSLA_PERSONAL[leader.persona?.profession] && rnd() < .6 ? KANSLA_PERSONAL[leader.persona.profession] : pick(rnd, KANSLA) },
+    { type: 'angrepp', label: 'Motangrepp', text: pick(rnd, ANGREPP) },
+    { type: 'kompromiss', label: 'Lugn & kompromiss', text: pick(rnd, KOMPROMISS) },
+  ];
+  if (hasTrait(leader, 'humoristisk')) options.push({ type: 'humor', label: 'Humor', text: pick(rnd, HUMOR) });
+  return options;
+}
 function buildRound(state, rnd, op, issue) {
   const is = ISSUE_BY_ID[issue]; const mine = me(state);
   const side = sideOf(op, issue);
   const statement = pick(rnd, PHRASES[issue][side]).replace('{parti}', mine.abbr);
-  const options = [];
-  const st = statLine(state, issue);
-  options.push({ type: 'fakta', label: 'Fakta', text: st.text, stat: st.id });
-  options.push({ type: 'kansla', label: 'Känsla', text: pick(rnd, KANSLA) });
-  options.push({ type: 'angrepp', label: 'Motangrepp', text: pick(rnd, ANGREPP) });
-  options.push({ type: 'kompromiss', label: 'Lugn & kompromiss', text: pick(rnd, KOMPROMISS) });
-  // INVÄNDNING: har motståndaren röstat tvärtemot det de just sa?
+  const options = baseOptions(state, rnd, issue);
   const rec = (state.riksdag.record[op.id] || []).filter((r) => { const b = BILL_AREA[r.billId]; return b && b.area === issue; });
   const contra = rec.find((r) => { const b = BILL_AREA[r.billId]; const dir = Object.values(b.vec)[0] > 0 ? 'R' : 'L'; return (r.vote === 'ja' && dir !== side) || (r.vote === 'nej' && dir === side); });
-  // eller: motståndaren har ändrat sig kraftigt i frågan (jämfört med startposition)
   const flip = op.posStart && Math.abs((op.posStart[issue] || 0) - op.pos[issue]) > 30;
-  if (contra) options.push({ type: 'invandning', label: 'INVÄNDNING!', text: `Vänta nu. Den ${contra.vote === 'ja' ? 'förslaget' : 'motionen'} "${contra.title}" – ni röstade ${contra.vote.toUpperCase()}. Hur går det ihop med det du just sa?`, evidence: `Riksdagens protokoll: ${op.abbr} röstade ${contra.vote} om "${contra.title}".` });
+  if (contra) options.push({ type: 'invandning', label: 'INVÄNDNING!', text: `Vänta nu. ${contra.vote === 'ja' ? 'Förslaget' : 'Motionen'} "${contra.title}" – ni röstade ${contra.vote.toUpperCase()}. Hur går det ihop med det du just sa?`, evidence: `Riksdagens protokoll: ${op.abbr} röstade ${contra.vote} om "${contra.title}".` });
   else if (flip) options.push({ type: 'invandning', label: 'INVÄNDNING!', text: `För bara några år sedan stod ${op.abbr} för raka motsatsen. Vad hände – bytte ni åsikt eller bytte ni väljare?`, evidence: `${op.name}s partiprogram har flyttat sig kraftigt i frågan om ${is.name.toLowerCase()}.` });
   return { issue, statement, options, opExpr: side === 'R' ? 'determined' : 'confident', resolved: false };
 }
-import { BILLS } from './riksdag.js';
-const BILL_AREA = Object.fromEntries(BILLS.map((b) => [b.id, b]));
-
 function buildInterviewRounds(state, rnd, j, issue) {
   const mine = me(state); const leader = state.people[mine.leader];
   const rounds = [];
-  const hot = issue || [...ISSUES].sort((a, b) => state.opinion.salience[b.id] - state.opinion.salience[a.id])[0].id;
+  const hostile = (j?.rel ?? 0) < -25, friendly = (j?.rel ?? 0) > 25;
+  const hot = issue || (j?.beat && ISSUE_BY_ID[j.beat] ? j.beat : [...ISSUES].sort((a, b) => state.opinion.salience[b.id] - state.opinion.salience[a.id])[0].id);
   const is = ISSUE_BY_ID[hot];
-  const q1 = `${pick(rnd, ['Låt oss börja med', 'Först:', 'Många väljare undrar:'])} ${is.name.toLowerCase()}. Ert parti vill ${(mine.pos[hot] || 0) < 0 ? is.left.toLowerCase() : is.right.toLowerCase()}. Hur ska det betalas?`;
-  rounds.push({ issue: hot, statement: q1, interview: true, options: [
-    { type: 'fakta', label: 'Siffror', text: statLine(state, hot).text },
-    { type: 'kansla', label: 'Berättelse', text: pick(rnd, KANSLA) },
-    { type: 'kompromiss', label: 'Resonera', text: pick(rnd, KOMPROMISS) },
-    { type: 'undvik', label: 'Undvik frågan', text: 'Det viktiga är inte exakt hur, utan att vi gör det. Låt mig i stället berätta om…' },
-  ] });
-  // gotcha-fråga
+  const q1 = `${friendly ? 'Trevligt att ha dig här. ' : hostile ? 'Vi har mycket att reda ut. ' : ''}${pick(rnd, ['Låt oss börja med', 'Först:', 'Många väljare undrar:'])} ${is.name.toLowerCase()}. Ert parti vill ${(mine.pos[hot] || 0) < 0 ? is.left.toLowerCase() : is.right.toLowerCase()}. Hur ska det betalas?`;
+  rounds.push({ issue: hot, statement: q1, interview: true, options: [...baseOptions(state, rnd, hot).filter((o) => o.type !== 'angrepp'), { type: 'undvik', label: 'Undvik frågan', text: 'Det viktiga är inte exakt hur, utan att vi gör det. Låt mig i stället berätta om…' }] });
   const got = pick(rnd, [
     { q: 'Vad kostar ett paket mjölk i dag?', a: `Ungefär ${fmt(14 + state.sweden.stats.inflation * .8, 0)} kronor för en liter.`, bad: 'Eh… det beror på var man handlar… tio kronor?' },
     { q: 'Hur stor är statsskulden i andel av BNP?', a: `Runt ${fmt(state.sweden.stats.statsskuld_bnp, 0)} procent – lågt i ett europeiskt perspektiv.`, bad: 'Alldeles för hög. Flera tusen miljarder.' },
     { q: 'Hur många skjutningar hade Sverige förra året?', a: `Drygt ${fmt(state.sweden.stats.skjutningar, 0)}. Varje enskild är en för mycket.`, bad: 'Många. Alldeles för många. Jag har inte siffran framför mig.' },
     { q: 'Vad är Riksbankens styrränta just nu?', a: `${fmt(state.sweden.stats.styrranta, 2)} procent.`, bad: 'Runt fyra, fem procent? Den ändras ju hela tiden.' },
   ]);
-  rounds.push({ issue: 'ekonomi', statement: got.q, interview: true, gotcha: true, options: [
+  if (!friendly || rnd() < .5) rounds.push({ issue: 'ekonomi', statement: got.q, interview: true, gotcha: true, options: [
     { type: 'fakta', label: 'Svara exakt', text: got.a, gotchaOk: true },
     { type: 'undvik', label: 'Glid undan', text: got.bad },
     { type: 'angrepp', label: 'Avfärda frågan', text: 'Är det här verkligen vad era tittare vill veta? Jag är här för att prata politik.' },
+    ...(hasTrait(leader, 'humoristisk') ? [{ type: 'humor', label: 'Skämta bort', text: 'Jag kan priset på en kaffe på riksdagens kafé. Det är skandalöst nog.' }] : []),
   ] });
-  // skandal eller röstminne
   const sc = (state.scandals || []).find((x) => x.active && x.partyId === mine.id);
   const rec = (state.riksdag.record[mine.id] || []).slice(-1)[0];
+  const memo = j?.memory?.[0];
   if (sc) rounds.push({ issue: 'varderingar', statement: `Vi måste prata om ${sc.title.toLowerCase()}en. ${sc.text.split('.')[0]}. Hur kan väljarna lita på er?`, interview: true, scandal: true, options: [
     { type: 'kompromiss', label: 'Ta ansvar', text: 'Jag tar fullt ansvar. Vi har gjort fel, vi har rättat till det, och vi går vidare med lärdomen.' },
     { type: 'angrepp', label: 'Angrip medierna', text: 'Det här är en drevkampanj. Ni borde granska de riktiga problemen i Sverige.' },
     { type: 'undvik', label: 'Byt ämne', text: 'Jag förstår frågan, men det svenska folket bryr sig mer om…' },
+  ] });
+  else if (hostile && memo) rounds.push({ issue: 'varderingar', statement: `Jag har följt er länge. ${memo.memo} Har ni ändrat er?`, interview: true, options: [
+    { type: 'fakta', label: 'Förklara', text: 'Det var då. Vi har lärt oss, och vi står för det vi gör i dag.' },
+    { type: 'angrepp', label: 'Avfärda', text: 'Du gräver i gamla saker för att du inte har något nytt.' },
+    { type: 'kompromiss', label: 'Erkänn', text: 'Du har rätt i att vi kunde ha gjort bättre. Det är därför vi ändrat kurs.' },
   ] });
   else if (rec) rounds.push({ issue: BILL_AREA[rec.billId]?.area || 'ekonomi', statement: `Ni röstade ${rec.vote} om "${rec.title}". Förklara för tittarna varför.`, interview: true, options: [
     { type: 'fakta', label: 'Förklara sakligt', text: `Därför att ${rec.vote === 'ja' ? 'förslaget stämde med vår politik' : 'förslaget var ofinansierat och slog mot vanligt folk'}. Vi står för det.` },
@@ -136,70 +145,91 @@ function buildInterviewRounds(state, rnd, j, issue) {
     { type: 'undvik', label: 'Undvik', text: 'Den omröstningen var komplicerad. Låt oss prata om framtiden.' },
   ] });
   else rounds.push({ issue: 'varderingar', statement: `Sista frågan: varför ska någon rösta på just ${mine.name}?`, interview: true, options: [
-    { type: 'kansla', label: 'Från hjärtat', text: pick(rnd, KANSLA) },
+    { type: 'kansla', label: 'Från hjärtat', text: KANSLA_PERSONAL[leader.persona?.profession] || pick(rnd, KANSLA) },
     { type: 'fakta', label: 'Programmet', text: `Därför att vi har ett konkret program: ${ISSUES.filter((i) => (mine.profile?.[i.id] || 1) > 1.1).slice(0, 3).map((i) => i.name.toLowerCase()).join(', ') || 'ett bättre Sverige'}.` },
     { type: 'angrepp', label: 'Mot de andra', text: pick(rnd, ANGREPP) },
   ] });
   return rounds;
 }
+function buildPoddRounds(state, rnd, inf) {
+  const mine = me(state); const leader = state.people[mine.leader];
+  const issues = Object.keys(inf.lean).filter((k) => ISSUE_BY_ID[k]);
+  const rounds = [];
+  rounds.push({ issue: 'varderingar', statement: `Välkommen! Mina lyssnare vill veta vem du är. Vad gör du en vanlig söndag?`, interview: true, podd: true, options: [
+    { type: 'kansla', label: 'Personligt', text: `${leader.persona?.children ? 'Barnen' : 'Hunden'} och ${pick(rnd, ['en lång promenad', 'söndagsmiddag med familjen', 'en runda i skogen', 'fotboll på TV'])}. Och så läser jag ikapp allt jag missat under veckan.` },
+    { type: 'humor', label: 'Skämta', text: 'Jag svarar på mejl från folk som är arga på mig. Det är min hobby.' },
+    { type: 'fakta', label: 'Politiken', text: 'Jag förbereder veckan. Politik tar aldrig ledigt.' },
+  ] });
+  for (const isId of issues.slice(0, 2)) { const is = ISSUE_BY_ID[isId]; const side = inf.lean[isId] < 0 ? 'L' : 'R'; rounds.push({ issue: isId, statement: `Mina lyssnare bryr sig mycket om ${is.name.toLowerCase()}. ${pick(rnd, PHRASES[isId][side]).replace('{parti}', 'många partier')} Vad säger du?`, interview: true, podd: true, options: baseOptions(state, rnd, isId).filter((o) => o.type !== 'angrepp') }); }
+  return rounds;
+}
 
-// Spelaren väljer ett alternativ i en runda. Returnerar utfallet (text, delta, uttryck).
 export function resolveOption(state, rnd, debate, roundIdx, optIdx) {
   G = rnd;
   const r = debate.rounds[roundIdx]; const o = r.options[optIdx];
   const mine = me(state); const l = state.people[mine.leader];
-  const t = l.traits;
+  const t = l.traits; const pe = l.persona || {};
   const sal = state.opinion.salience[r.issue] || 1;
-  const credFit = (mine.profile?.[r.issue] || 1) > 1.1 ? .1 : 0; // profilfråga
+  const credFit = (mine.profile?.[r.issue] || 1) > 1.1 ? .1 : 0;
+  const voice = VOICES.find((v) => v.id === pe.voice) || {};
+  const body = BODY_LANGUAGE.find((b) => b.id === pe.bodyLanguage) || {};
   let p, win, lose;
   switch (o.type) {
-    case 'fakta': p = .35 + (t.intelligens - 45) / 120 + (mine.credibility - 50) / 250 + credFit; win = 14; lose = -6; break;
-    case 'kansla': p = .35 + (t.karisma - 45) / 110 + credFit; win = 15; lose = -8; break;
-    case 'angrepp': p = .3 + (t.retorik - 45) / 130 + (t.aggressivitet - 45) / 200; win = 20; lose = -14; break;
-    case 'kompromiss': p = .5 + (t.lugn - 45) / 150 + (t.social - 45) / 250; win = 8; lose = -3; break;
+    case 'fakta': p = .35 + (t.intelligens - 45) / 120 + (mine.credibility - 50) / 250 + credFit + (l.cred?.[r.issue] || 0) / 100 * .6 + (hasTrait(l, 'kall') ? .05 : 0); win = 14; lose = -6; break;
+    case 'kansla': p = .35 + (t.karisma - 45) / 110 + credFit + (hasTrait(l, 'empatisk') ? .1 : 0) + (voice.kansla || 0) / 100 + (hasTrait(l, 'kall') ? -.08 : 0); win = 15; lose = -8; break;
+    case 'angrepp': p = .3 + (t.retorik - 45) / 130 + (t.aggressivitet - 45) / 200 + (voice.angrepp || 0) / 100; win = 20; lose = -14; break;
+    case 'kompromiss': p = .5 + (t.lugn - 45) / 150 + (t.social - 45) / 250 + (hasTrait(l, 'pragmatisk') ? .08 : 0) + (hasTrait(l, 'ideologisk') ? -.06 : 0); win = 8; lose = -3; break;
+    case 'humor': p = .38 + (t.karisma - 45) / 120 + (t.social - 45) / 200 + (debate.kind === 'podd' ? .15 : debate.kind === 'riksdag' ? -.12 : 0); win = debate.kind === 'podd' ? 14 : 16; lose = -12; break;
     case 'undvik': p = .25 + (t.retorik - 45) / 200; win = 4; lose = -12; break;
     case 'invandning': p = .55 + (t.retorik - 45) / 110 + (t.intelligens - 45) / 200; win = 32; lose = -10; break;
   }
   if (r.gotcha) { if (o.gotchaOk) { p = .5 + (t.intelligens - 45) / 80; win = 12; lose = -10; } else if (o.type === 'undvik') { p = .15; win = 2; lose = -14; } }
   if (r.scandal && o.type === 'angrepp') { p -= .15; lose -= 6; }
-  if (debate.kind === 'riksdag') p += (t.erfarenhet - 45) / 300;
+  if (debate.kind === 'riksdag') p += (t.erfarenhet - 45) / 300 + (voice.riksdag || 0) / 100;
+  if (debate.kind === 'interview' || debate.kind === 'podd') { p += (voice.folk || 0) / 100 * (debate.kind === 'podd' ? 1 : .5); const auth = authenticity(l); if (auth < .5) p -= (0.5 - auth) * .2; }
+  p += (body.debate || 0) / 100;
+  if (hasTrait(l, 'pessimistisk') && r.scandal) p += .05;
   p = clamp(p, .05, .95);
   const ok = rnd() < p;
   const delta = (ok ? win : lose) * (1 + (sal - 1) * .3);
   debate.meter = clamp(debate.meter + delta, -100, 100);
   r.resolved = true; r.choice = optIdx; r.ok = ok; r.delta = delta;
-  const op = debate.opponentParty ? state.parties[debate.opponentParty] : null;
   let reply;
-  if (debate.kind === 'interview') reply = ok ? pick(rnd, ['Tack, det var ett tydligt svar.', 'Okej. Vi går vidare.', 'Intressant. Nästa fråga.']) : pick(rnd, ['Det var inget svar på min fråga.', 'Tittarna hör nog att du undviker frågan.', 'Jag tolkar det som att du inte vet.']);
-  else reply = ok ? (o.type === 'invandning' ? pick(rnd, ['…Det… det var ett annat läge då.', 'Du rycker det ur sitt sammanhang!', 'Jag… vi har omprövat den frågan.']) : pick(rnd, ['Det är inte så enkelt som du låter påskina.', 'Jag känner inte igen den beskrivningen.', 'Vi kan väl vara överens om att det är komplicerat.'])) : pick(rnd, ['Där hör ni – inga svar, bara ord.', `Det här är typiskt ${mine.abbr}. Mycket snack.`, 'Du har uppenbarligen inte läst siffrorna.', 'Publiken förtjänar bättre än det där.']);
+  if (debate.kind === 'podd') reply = ok ? pick(rnd, ['Haha, älskar det. Lyssnare, hörde ni?', 'Bra svar. Det där klipper vi.', 'Okej, det köper jag.']) : pick(rnd, ['Mm. Det lät lite som en pressrelease.', 'Du låter som alla andra politiker nu.', 'Mina lyssnare kommer inte gilla det där.']);
+  else if (debate.kind === 'interview') reply = ok ? pick(rnd, ['Tack, det var ett tydligt svar.', 'Okej. Vi går vidare.', 'Intressant. Nästa fråga.']) : pick(rnd, ['Det var inget svar på min fråga.', 'Tittarna hör nog att du undviker frågan.', 'Jag tolkar det som att du inte vet.']);
+  else reply = ok ? (o.type === 'invandning' ? pick(rnd, ['…Det… det var ett annat läge då.', 'Du rycker det ur sitt sammanhang!', 'Jag… vi har omprövat den frågan.']) : o.type === 'humor' ? pick(rnd, ['Mycket roligt. Men svara på frågan.', 'Publiken skrattar – jag gör det inte.']) : pick(rnd, ['Det är inte så enkelt som du låter påskina.', 'Jag känner inte igen den beskrivningen.', 'Vi kan väl vara överens om att det är komplicerat.'])) : pick(rnd, ['Där hör ni – inga svar, bara ord.', `Det här är typiskt ${mine.abbr}. Mycket snack.`, 'Du har uppenbarligen inte läst siffrorna.', 'Publiken förtjänar bättre än det där.']);
   const narration = ok ? pick(rnd, REACT_WIN) : pick(rnd, REACT_LOSE);
-  return { ok, delta, reply, narration, myExpr: ok ? (o.type === 'invandning' ? 'objection' : o.type === 'angrepp' ? 'angry' : 'confident') : 'nervous', myPose: o.type === 'invandning' ? 'point' : o.type === 'angrepp' ? 'slam' : o.type === 'fakta' ? 'open' : o.type === 'kompromiss' ? 'think' : 'stand', opExpr: ok ? (o.type === 'invandning' ? 'shocked' : 'nervous') : 'smug', opPose: ok ? 'stand' : 'cross', evidence: o.evidence || null };
+  const poses = body.poses || ['stand', 'open'];
+  const myPose = o.type === 'invandning' ? 'point' : o.type === 'angrepp' ? 'slam' : o.type === 'fakta' ? (poses.includes('open') ? 'open' : 'stand') : o.type === 'kompromiss' ? 'think' : o.type === 'humor' ? 'hips' : poses[0];
+  return { ok, delta, reply, narration, myExpr: ok ? (o.type === 'invandning' ? 'objection' : o.type === 'angrepp' ? 'angry' : o.type === 'humor' ? 'happy' : 'confident') : 'nervous', myPose, opExpr: ok ? (o.type === 'invandning' ? 'shocked' : 'nervous') : 'smug', opPose: ok ? 'stand' : 'cross', evidence: o.evidence || null };
 }
 
-// Debatten är slut: effekter på opinion, ledare, nyheter
 export function finishDebate(state, rnd, debate) {
   const mine = me(state); const l = state.people[mine.leader];
   const m = debate.meter;
   const verdict = m > 25 ? 'vann' : m < -25 ? 'förlorade' : 'oavgjort';
   const op = debate.opponentParty ? state.parties[debate.opponentParty] : null;
-  const scale = (debate.campaign ? 1.6 : 1) * (debate.kind === 'interview' ? .6 : 1);
+  const scale = (debate.campaign ? 1.6 : 1) * (debate.kind === 'interview' ? .6 : debate.kind === 'podd' ? .5 : 1);
   l.debateBonus = (l.debateBonus || 0) + (m / 100) * 8 * scale;
   mine.attention = clamp(mine.attention + 6 + Math.abs(m) / 10, 0, 100);
   const aw = state.opinion.awareness[mine.id] ?? 1; if (aw < 1) state.opinion.awareness[mine.id] = clamp(aw + .03 + Math.max(0, m) / 500, 0, 1);
   mine.credibility = clamp(mine.credibility + (m / 100) * 3, 0, 100);
-  // opinionen: grupper som bryr sig om debattens frågor rör sig
   const issues = debate.rounds.map((r) => r.issue);
+  const inf = debate.influencerId ? state.influencers[debate.influencerId] : null;
   for (const sg of SEGMENTS) {
     const seg = state.opinion.seg[sg.id]; if (!seg) continue;
     const care = issues.reduce((a, i) => a + (sg.w[i] || 1), 0) / issues.length;
-    const swing = (m / 100) * .9 * care * sg.leader * scale;
+    let swing = (m / 100) * .9 * care * sg.leader * scale;
+    if (inf) swing = inf.segs.includes(sg.id) ? (m / 100) * 1.2 : (m / 100) * .1;
     seg[mine.id] = Math.max(.01, (seg[mine.id] || .1) + swing);
     if (op && seg[op.id] != null) seg[op.id] = Math.max(.01, seg[op.id] - swing * .6);
   }
   if (op) { op.attention = clamp(op.attention + 3, 0, 100); const ol = state.people[op.leader]; ol.debateBonus = (ol.debateBonus || 0) - (m / 100) * 4 * scale; }
+  if (inf) { inf.stance = clamp(inf.stance + m * .4, -100, 100); inf.lastWeek = state.week; }
+  if (debate.journalistId) { const attacked = debate.rounds.some((r) => r.options[r.choice]?.type === 'angrepp'); adjustJournalist(state, debate.journalistId, attacked ? -12 : verdict === 'vann' ? 6 : verdict === 'förlorade' ? -3 : 2, verdict === 'förlorade' ? `${l.name} kunde inte svara om ${ISSUE_BY_ID[issues[0]]?.name.toLowerCase()} i min utfrågning.` : null); const j = state.journalists[debate.journalistId]; if (j) j.interviews++; }
   if (verdict === 'vann') state.stats.debatesWon++;
   const outlet = debate.host === 'riksdag' ? 'svt' : debate.host in MEDIA ? debate.host : 'svt';
-  const h = debate.kind === 'interview' ? (verdict === 'vann' ? `${l.name} stod pall i tuff utfrågning` : verdict === 'förlorade' ? `${l.name} i blåsväder efter utfrågning: "Kunde inte svara"` : `Jämn utfrågning av ${l.name}`) : verdict === 'vann' ? `${l.name} vann ${debate.name.toLowerCase()} – ${op?.abbr} pressad` : verdict === 'förlorade' ? `${state.people[op.leader].name} (${op.abbr}) dominerade ${debate.name.toLowerCase()}` : `Oavgjort i ${debate.name.toLowerCase()}`;
+  const h = debate.kind === 'podd' ? (verdict === 'vann' ? `${l.name} charmade ${inf?.name}s lyssnare` : verdict === 'förlorade' ? `${l.name} floppade i ${inf?.name} – "som en pressrelease"` : `${l.name} gästade ${inf?.name}`) : debate.kind === 'interview' ? (verdict === 'vann' ? `${l.name} stod pall i tuff utfrågning` : verdict === 'förlorade' ? `${l.name} i blåsväder efter utfrågning: "Kunde inte svara"` : `Jämn utfrågning av ${l.name}`) : verdict === 'vann' ? `${l.name} vann ${debate.name.toLowerCase()} – ${op?.abbr} pressad` : verdict === 'förlorade' ? `${state.people[op.leader].name} (${op.abbr}) dominerade ${debate.name.toLowerCase()}` : `Oavgjort i ${debate.name.toLowerCase()}`;
   const inv = debate.rounds.filter((r) => r.options[r.choice]?.type === 'invandning' && r.ok).length;
   addNews(state, { outlet, headline: h, body: `${inv ? `Kvällens ögonblick: ${l.name} avslöjade en motsägelse i ${op?.abbr}:s politik – "${pick(rnd, ['Ni röstade ju tvärtom!', 'Hur går det ihop?'])}". ` : ''}${verdict === 'vann' ? `"${pick(rnd, ['Bästa insatsen på länge', 'Ett genombrott', 'Skarp och påläst'])}", säger kommentatorerna.` : verdict === 'förlorade' ? `${pick(rnd, ['Osäker', 'Svävande', 'Illa förberedd'])} – så beskrivs insatsen.` : 'Ingen av deltagarna lyckades sticka ut.'}`, tags: ['debatt'], partyId: mine.id, importance: debate.campaign ? 3 : 2, tone: verdict === 'vann' ? 1 : verdict === 'förlorade' ? -1 : 0 });
   debate.done = true; debate.result = verdict;

@@ -75,8 +75,9 @@ export function composePost(state, rnd, { platform, kind, issue, tone, format, t
   const text = tmpl.replace('{frågan}', iss ? iss.name.toLowerCase() : 'det som spelar roll').replace('{förslag}', iss ? pick(rnd, PROPOSALS[iss.id]) : 'en ny politik').replace('{hemstad}', leader.bg.hemstad)
     .replace('{parti}', tgt ? tgt.name : 'de andra').replace('{partiledare}', tgt ? state.people[tgt.leader].name : 'partiledaren').replace('{röst}', lastVote ? lastVote.vote : 'nej').replace('{lag}', lastVote ? lastVote.title : 'ett viktigt förslag')
     .replace('{rubrik}', newsItem ? newsItem.headline : 'dagens nyhet');
-  // räckvidd
-  const fol = state.social.followers[leader.id][platform] || 10;
+  // räckvidd (en ny partiledare börjar med små konton)
+  const acct = (state.social.followers[leader.id] ||= Object.fromEntries(PLATFORMS.map((p) => [p.id, 300])));
+  const fol = acct[platform] || 10;
   const sal = iss ? state.opinion.salience[iss.id] || 1 : 1;
   const charisma = (leader.traits.karisma - 45) / 100, retorik = (leader.traits.retorik - 45) / 100;
   const viralRoll = Math.exp(gauss(rnd, 0, .9)); // tung svans: ibland går det viralt
@@ -84,7 +85,7 @@ export function composePost(state, rnd, { platform, kind, issue, tone, format, t
   const engagement = clamp(.03 + charisma * .03 + (tone === 'provocerande' ? .03 : 0) + (format === 'video' || format === 'meme' ? .02 : 0), .01, .2);
   const likes = Math.round(reach * engagement);
   const newFollowers = Math.round(reach * .004 * (1 + charisma));
-  state.social.followers[leader.id][platform] += newFollowers;
+  acct[platform] += newFollowers;
   // effekt på kännedom & uppmärksamhet & opinion
   const aw = state.opinion.awareness[me.id] ?? 1;
   if (aw < 1) state.opinion.awareness[me.id] = clamp(aw + reach / 3.5e6, 0, 1);

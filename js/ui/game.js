@@ -21,6 +21,11 @@ import { runElectionNight } from './election.js';
 import { runFormation, runOffer } from './formation.js';
 import { runBudget } from './budget.js';
 import { VERSION } from '../version.js';
+import { applyFactionChoice, installLeader, STRUCTURE_OPTIONS, structureSummary, defaultStructure } from '../sim/party.js';
+import { manifestCandidates } from '../sim/promises.js';
+import { SEGMENTS } from '../data/segments.js';
+import { renderLeaderCreator, blankLeader, finalizeLeader } from './leader-creator.js';
+import { makePerson, applyPersona, credOf, personSummary, personaSummary } from '../sim/people.js';
 
 const me = () => G.state.parties[G.state.player.partyId];
 const leader = () => G.state.people[me().leader];
@@ -103,7 +108,12 @@ async function handleQueueItem(item) {
   switch (item.type) {
     case 'report': return reportDialog(item.report);
     case 'event': return eventDialog(item.event);
-    case 'interview': return runDebate(s, rnd, { kind: 'interview', issue: item.issue });
+    case 'interview': return item.influencer ? runDebate(s, rnd, { kind: 'podd', influencer: item.influencer }) : runDebate(s, rnd, { kind: 'interview', issue: item.issue });
+    case 'note': return info(item.title, `<p>${esc(item.text)}</p>`);
+    case 'faction': return factionDialog(item);
+    case 'challenge': return challengeDialog(item);
+    case 'manifest': return manifestDialog(true);
+    case 'retire': return retireDialog();
     case 'debate': return runDebate(s, rnd, { kind: item.debate || 'tv', campaign: item.campaign, host: item.host, name: item.name });
     case 'scandal': return scandalDialog(s.scandals.find((x) => x.id === item.scandalId));
     case 'vote': return voteDialog(s.riksdag.bills.find((b) => b.id === item.billItemId));
@@ -178,6 +188,92 @@ async function actionDialog(a, extra = {}) {
   if (a.needs === 'issue_shift') return programDialog(run);
   if (a.needs === 'bill') return billDialog(run);
   if (a.needs === 'negotiate') return negotiateDialog(extra.itemId);
+  if (a.needs === 'structure') return kongressDialog(run);
+  if (a.needs === 'manifest') return manifestDialog(false, run);
+  if (a.needs === 'succession') return successionFlow(false, run);
+}
+
+// ---------- PARTIETS INRE LIV ----------
+async function factionDialog(item) {
+  const s = G.state; const p = s.parties[item.partyId]; const f = p?.factions?.find((x) => x.id === item.factionId); if (!f) return;
+  const is = ISSUE_BY_ID[item.issue]; const fl = f.leaderId ? s.people[f.leaderId] : null;
+  const i = await choice({ title: `${f.name} ställer krav`, text: `<p>${fl ? esc(fl.name) + ' talar för ' : ''}<b>${esc(f.name)}</b> (${fmt(f.strength, 0)} % av partiet, humör ${fmt(f.mood, 0)}): "Partiet måste ${item.shift > 0 ? 'gå åt höger' : 'gå åt vänster'} i frågan om ${esc(is.name.toLowerCase())}. Annars vet vi inte om vi hör hemma här längre."</p>`, choices: [{ label: `Ge efter: flytta partiet ${item.shift > 0 ? '+' : ''}${item.shift} i ${is.name.toLowerCase()}`, desc: 'Falangen lugnas. Trovärdighet −3, andra falanger muttrar.' }, { label: 'Stå fast', desc: 'Falangens humör sjunker. Risk för splittring ökar.', cls: 'red' }, { label: 'Bjud in till samtal', desc: 'Ledarskap och social förmåga avgör om det hjälper.' }] });
+  const txt = applyFactionChoice(s, G.rnd, item, i);
+  await info(f.name, `<p>${esc(txt)}</p>`);
+}
+async function challengeDialog(item) {
+  const s = G.state; const p = s.parties[item.partyId]; const ch = s.people[item.challengerId]; const l = leader(); if (!ch) return;
+  const pWin = clamp(.5 + (l.traits.ledarskap - ch.traits.ledarskap) / 150 + (p.unity - 50) / 200 + (l.approval - 40) / 200 + (p.structure?.ledarmakt - 50) / 400, .1, .9);
+  const i = await choice({ title: '⚔️ Partiledarstrid', text: `<div class="minister"><div class="av">${characterSVG(ch, { crop: 'face', id: 'ch' })}</div><div><b>${esc(ch.name)}</b>, ${ch.age}<br><small class="muted">${esc(personSummary(ch))}<br>${esc(personaSummary(ch))} · ambition ${ch.ambition} · ledarskap ${ch.traits.ledarskap}</small></div></div><p style="margin-top:10px">${esc(ch.first)} meddelar att hen utmanar dig om partiledarposten ${p.structure?.ledarval === 'medlem' ? 'i en medlemsomröstning' : p.structure?.ledarval === 'styrelse' ? 'inför partistyrelsen' : 'på en extrakongress'}. Partiets sammanhållning är ${fmt(p.unity, 0)}. Din chans att vinna bedöms till <b>${fmt(pWin * 100, 0)} %</b>.</p>`, choices: [{ label: 'Ta striden', desc: 'Vinner du stärks partiet. Förlorar du lämnar du posten.', cls: 'gold' }, { label: 'Erbjud utmanaren posten som vice partiledare', desc: 'Chans att striden ställs in. Utmanaren växer sig starkare.' }, { label: 'Avgå frivilligt', desc: 'Du väljer själv efterträdare – eller skapar en ny ledare.' }] });
+  if (i === 1) { const ok = G.rnd() < .45 + (l.traits.social - 45) / 150; if (ok) { ch.ambition = Math.max(10, ch.ambition - 15); p.unity = clamp(p.unity + 2, 0, 100); addNews(s, { outlet: 'svt', headline: `${ch.name} blir vice partiledare – ledarstriden i ${p.abbr} avblåst`, body: 'Kompromissen håller ihop partiet, för nu.', tags: ['parti'], partyId: p.id, importance: 2 }); return info('Striden avblåst', `<p>${esc(ch.name)} accepterar vice-posten. Striden är över – för nu.</p>`); } await info('Avvisat', `<p>${esc(ch.name)} tackar nej. Striden blir av.</p>`); }
+  if (i === 2) { addNews(s, { outlet: 'svt', headline: `${l.name} avgår som partiledare för ${p.name}`, body: `Efter en intern utmaning väljer ${l.name} att lämna. Efterträdare utses inom kort.`, tags: ['parti'], partyId: p.id, importance: 3 }); return successionFlow(true); }
+  const win = G.rnd() < pWin;
+  if (win) { p.unity = clamp(p.unity + 8, 0, 100); ch.loyalty = Math.max(5, ch.loyalty - 25); l.approval = clamp(l.approval + 3, 0, 100); addNews(s, { outlet: 'svt', headline: `${l.name} vann partiledarstriden i ${p.abbr}`, body: `${ch.name} fick inte majoritet. "Nu går vi vidare tillsammans", säger ${l.first}.`, tags: ['parti'], partyId: p.id, importance: 3 }); return info('🏆 Du vann!', `<p>Partiet slöt upp bakom dig. Sammanhållningen stärks, ${esc(ch.name)} slickar såren.</p>`); }
+  addNews(s, { outlet: 'svt', headline: `${ch.name} ny partiledare för ${p.name} – ${l.name} förlorade striden`, body: `${l.name} lämnar efter omröstningen. ${s.government.pm === l.id ? 'Regeringen leds nu av ' + ch.name + '.' : ''}`, tags: ['parti'], partyId: p.id, importance: 3 });
+  installLeader(s, p, ch, 'förlorade ledarstrid'); s.player.leaderId = ch.id; ch.ambition = 80; ch.loyalty = 99;
+  save();
+  await info('Du förlorade partiledarstriden', `<p><b>${esc(ch.name)}</b> är ny partiledare. Du fortsätter spela som ${esc(ch.first)} – världen och partiet går vidare.</p>`);
+}
+async function retireDialog() {
+  const s = G.state; const l = leader();
+  const i = await choice({ title: 'Dags att lämna?', text: `<p>${esc(l.name)} fyller ${l.age}. Partivänner – och medier – börjar fråga om det inte är dags att lämna över. Vill du avgå nu, med gott eftermäle, eller fortsätta?</p>`, choices: [{ label: 'Fortsätt som partiledare', desc: 'Frågan återkommer.' }, { label: 'Avgå och utse en efterträdare', desc: 'Du väljer vem som tar över – eller skapar en ny ledare.' }] });
+  if (i === 1) return successionFlow(true);
+}
+// Efterträdare: välj bland partiets profiler eller skapa en ny ledare
+async function successionFlow(forced, run = null) {
+  const s = G.state; const p = me(); const l = leader();
+  if (!forced) { const ok = await choice({ title: 'Lämna partiledarposten?', text: `<p>${esc(l.name)} avgår som partiledare för ${esc(p.name)}${isPlayerPM(s) ? ' och som statsminister' : ''}. Partiet behåller allt – mandat, pengar, organisation – och du fortsätter spela som efterträdaren. ${esc(l.first)}s karriär sammanfattas i historiken.</p>`, choices: [{ label: 'Ja, utse efterträdare', cls: 'red' }, { label: 'Nej, stanna kvar' }] }); if (ok !== 0) return; }
+  const cands = (p.people || []).map((id) => s.people[id]).filter((x) => x && x.alive);
+  const i = await choice({ title: 'Vem tar över?', wide: true, text: '<p>Välj en av partiets profiler – eller skapa en helt ny ledare.</p>', choices: [...cands.map((c) => ({ label: `${c.name}, ${c.age}`, desc: `${personSummary(c)} · ${personaSummary(c)} · ledarskap ${c.traits.ledarskap}, karisma ${c.traits.karisma}` })), { label: '＋ Skapa en ny ledare', cls: 'gold', desc: 'Öppnar ledarskaparen.' }] });
+  let next;
+  if (i < cands.length) next = cands[i];
+  else {
+    next = await createLeaderModal();
+    if (!next) { if (forced) return successionFlow(true); return; }
+    s.people[next.id] = next; p.people.push(next.id);
+  }
+  if (run) run({ successorId: next.id });
+  else { const { doAction } = await import('../sim/turn.js'); doAction(s, G.rnd, 'avga', { successorId: next.id }); save(); renderShell(); }
+}
+function createLeaderModal() {
+  return new Promise((resolve) => {
+    const L = blankLeader(G.rnd, G.rnd() < .5 ? 'k' : 'm');
+    const body = h('div', {});
+    const cr = renderLeaderCreator(body, L, { rnd: G.rnd });
+    const m = modal({ title: 'Skapa ny partiledare', body, wide: true, closable: false, buttons: [{ label: 'Avbryt', onClick: () => resolve(null) }, { label: 'Tillträd som partiledare', cls: 'gold', onClick: () => { const err = cr.validate(); if (err) { toast(err, 'bad'); return false; } const def = finalizeLeader(L); const per = makePerson(G.rnd, { partyId: me().id, role: 'leader', gender: def.gender, age: def.age, first: def.first, last: def.last, persona: def.persona, look: def.look, traits: def.traits }); per.name = def.name; per.bg = { ...def.bg }; per.baseTraits = { ...def.traits }; per.traits = applyPersona(def.traits, def.persona); per.cred = credOf(def.persona); per.approval = 35; resolve(per); } }] });
+    m.el.style.width = 'min(1240px, 98vw)';
+  });
+}
+function kongressDialog(run) {
+  const s = G.state; const p = me();
+  return new Promise((resolve) => {
+    const S = { ...(p.structure || defaultStructure()), malgrupper: [...(p.structure?.malgrupper || [])] };
+    const body = h('div', { class: 'grid c2' });
+    const left = h('div', {}); const right = h('div', {});
+    left.innerHTML = `<p class="help">Varje större förändring kostar sammanhållning (−3 per ändring, −4 i grundavgift, mildras av ledarskap). Falanger som förlorar inflytande blir missnöjda.</p><div class="axis" id="cent"></div><div class="axis" id="makt"></div><div class="axis" id="lokal"></div><div class="axis" id="bredd"></div>`;
+    const slider = (id, name, l, r, key) => { const a = left.querySelector('#' + id); a.innerHTML = `<div class="name"><span style="color:var(--text)">${name}</span><span class="v">${S[key]}</span></div><div class="l">${l}</div><input type="range" min="0" max="100" value="${S[key]}"><div class="r">${r}</div>`; a.querySelector('input').addEventListener('input', (e) => { S[key] = +e.target.value; a.querySelector('.v').textContent = S[key]; sum.innerHTML = structureSummary(S); }); };
+    slider('cent', 'Centralisering', 'Medlemmarna', 'Ledningen', 'centralisering'); slider('makt', 'Partiledarens makt', 'Kollektivt', 'Stark ledare', 'ledarmakt'); slider('lokal', 'Lokal självständighet', 'Kansliet styr', 'Fria avdelningar', 'lokalAutonomi'); slider('bredd', 'Bredd', 'Smalt & ideologiskt', 'Brett & pragmatiskt', 'bredd');
+    right.innerHTML = ['ledarval', 'kandidatval', 'stadgar'].map((k) => `<div class="field"><label>${esc(STRUCTURE_OPTIONS[k].name)}</label><div class="chips" id="${k}">${STRUCTURE_OPTIONS[k].options.map((o) => `<span class="chip ${S[k] === o.id ? 'on' : ''}" data-v="${o.id}" title="${esc(o.desc)}">${esc(o.name)}</span>`).join('')}</div></div>`).join('') + `<div class="field"><label>Ungdomsförbund</label><div class="chips" id="ung"><span class="chip ${S.ungdom ? 'on' : ''}" data-v="1">Ja</span><span class="chip ${!S.ungdom ? 'on' : ''}" data-v="0">Nej</span></div></div><div class="field"><label>Målgrupper (max 4)</label><div class="chips" id="mg">${SEGMENTS.map((sg) => `<span class="chip ${S.malgrupper.includes(sg.id) ? 'on' : ''}" data-v="${sg.id}">${esc(sg.name)}</span>`).join('')}</div></div><div class="card" id="sum"></div>`;
+    const sum = right.querySelector('#sum'); sum.innerHTML = structureSummary(S);
+    for (const k of ['ledarval', 'kandidatval', 'stadgar']) right.querySelector('#' + k).addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; S[k] = c.dataset.v; right.querySelectorAll(`#${k} .chip`).forEach((x) => x.classList.toggle('on', x.dataset.v === S[k])); sum.innerHTML = structureSummary(S); });
+    right.querySelector('#ung').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; S.ungdom = c.dataset.v === '1'; right.querySelectorAll('#ung .chip').forEach((x) => x.classList.toggle('on', (x.dataset.v === '1') === S.ungdom)); sum.innerHTML = structureSummary(S); });
+    right.querySelector('#mg').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; const v = c.dataset.v; if (S.malgrupper.includes(v)) S.malgrupper = S.malgrupper.filter((x) => x !== v); else if (S.malgrupper.length < 4) S.malgrupper.push(v); else return; c.classList.toggle('on', S.malgrupper.includes(v)); });
+    body.append(left, right);
+    modal({ title: 'Partikongress', body, wide: true, buttons: [{ label: 'Avbryt', onClick: resolve }, { label: 'Klubba besluten (2 AP)', cls: 'gold', onClick: () => { run({ structure: S }); resolve(); } }] });
+  });
+}
+function manifestDialog(fromQueue, run = null) {
+  const s = G.state; const p = me();
+  return new Promise((resolve) => {
+    const cands = manifestCandidates(s); const sel = new Set();
+    const body = h('div', {});
+    body.innerHTML = `<p class="help">${fromQueue ? 'Valrörelsen har börjat. ' : ''}Välj 3–5 vallöften. Efter valet granskar medierna vilka som infriats – i regeringsställning kostar brutna löften förtroende, hållna ger. ${fromQueue ? '(Kostar inga handlingspoäng nu.)' : ''}</p><div class="list" id="list"></div>`;
+    const list = body.querySelector('#list');
+    for (const { b, st } of cands) { const d = h('div', { class: 'item clickable' }); d.innerHTML = `<div class="top"><b>${esc(b.title)}</b><span class="tag ${st > .5 ? 'green' : ''}">${esc(ISSUE_BY_ID[b.area].short)}</span></div><small>${esc(b.desc)}</small>`; d.addEventListener('click', () => { if (sel.has(b.id)) sel.delete(b.id); else if (sel.size < 5) sel.add(b.id); d.style.borderColor = sel.has(b.id) ? 'var(--gold)' : ''; cnt.textContent = `${sel.size} valda`; }); list.append(d); }
+    const cnt = h('span', { class: 'muted' }, '0 valda');
+    const m = modal({ title: `Valmanifest ${s.election.next.y}`, body, wide: true, closable: !fromQueue, buttons: [{ label: fromQueue ? 'Inget manifest' : 'Avbryt', onClick: resolve }, { label: 'Presentera manifestet', cls: 'gold', onClick: () => { if (sel.size < 3) { toast('Välj minst tre löften.', 'bad'); return false; } if (run) run({ billIds: [...sel] }); else { import('../sim/promises.js').then(({ setManifest }) => { setManifest(s, [...sel]); save(); renderShell(); }); } resolve(); } }] });
+    m.el.querySelector('.mf').prepend(cnt);
+  });
 }
 async function pickIssue(title) {
   const s = G.state;

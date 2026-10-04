@@ -26,7 +26,8 @@ export function runDebate(state, rnd, opts) {
     const me = state.parties[state.player.partyId]; const ml = state.people[me.leader];
     const opP = d.opponentParty ? state.parties[d.opponentParty] : null;
     const op = d.opponent;
-    const bg = d.kind === 'riksdag' ? 'riksdag' : d.kind === 'interview' ? 'intervju' : 'tv';
+    const myPitch = ({ ljus: 1.25, mork: .7, hes: .85, mjuk: 1.0, skarp: 1.1 })[ml.persona?.voice] || 1;
+    const bg = d.kind === 'riksdag' ? 'riksdag' : d.kind === 'interview' ? 'intervju' : d.kind === 'podd' ? 'kansli' : 'tv';
     const root = document.getElementById('scene');
     const aa = h('div', { class: 'aa' });
     aa.innerHTML = `<div class="stage"><div class="view">
@@ -34,7 +35,7 @@ export function runDebate(state, rnd, opts) {
       <div class="char left" id="cl"></div>
       <div class="char right" id="cr"></div>
       <div class="topic" id="topic"></div>
-      <div class="meter"><div class="lbl"><span>${esc(opP ? opP.abbr : 'Journalisten')}</span><span>PUBLIKEN</span><span>${esc(me.abbr)}</span></div><div class="track"><i id="meter"></i></div></div>
+      <div class="meter"><div class="lbl"><span>${esc(opP ? opP.abbr : d.kind === 'podd' ? 'Lyssnarna' : 'Journalisten')}</span><span>${d.kind === 'podd' ? 'LYSSNARNA' : 'PUBLIKEN'}</span><span>${esc(me.abbr)}</span></div><div class="track"><i id="meter"></i></div></div>
       <button class="btn sm skip" id="skip">Hoppa över ⏩</button>
       <div class="textbox" id="tb"><div class="name" id="nm"></div><div class="txt" id="txt"></div><div class="next" id="nx">▼</div></div>
       <div class="choices" id="ch" style="display:none"></div>
@@ -55,7 +56,7 @@ export function runDebate(state, rnd, opts) {
       let i = 0; const full = text;
       const finishTyping = () => { clearInterval(typing); typing = null; txt.textContent = full; nx.style.display = ''; if (side === 'left') setChar('left', person, expr, pose, false); else if (side === 'right') setChar('right', person, expr, pose, false); };
       if (skipAll) { finishTyping(); return res(); }
-      typing = setInterval(() => { i += 2; txt.textContent = full.slice(0, i); if (i % 6 === 0 && full[i] !== ' ') beep(side === 'left' ? 520 : 330, .025, 'square', .02); if (i >= full.length) { finishTyping(); } }, 22);
+      typing = setInterval(() => { i += 2; txt.textContent = full.slice(0, i); if (i % 6 === 0 && full[i] !== ' ') beep((side === 'left' ? 440 * (myPitch) : 330), .025, 'square', .02); if (i >= full.length) { finishTyping(); } }, 22);
       const onClick = () => { if (typing) { finishTyping(); return; } tb.removeEventListener('click', onClick); document.removeEventListener('keydown', onKey); waiting = null; res(); };
       const onKey = (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onClick(); } };
       waiting = () => { tb.removeEventListener('click', onClick); document.removeEventListener('keydown', onKey); if (typing) finishTyping(); waiting = null; res(); };
@@ -70,15 +71,15 @@ export function runDebate(state, rnd, opts) {
     const showEvidence = (text) => { const e = h('div', { class: 'evidence' }); e.innerHTML = `<b>Bevis</b>${esc(text)}`; view.append(e); setTimeout(() => e.remove(), skipAll ? 100 : 4000); };
 
     (async () => {
-      setChar('left', ml, 'neutral', 'stand'); setChar('right', op, 'neutral', d.kind === 'interview' ? 'think' : 'cross');
+      setChar('left', ml, 'neutral', 'stand'); setChar('right', op, 'neutral', d.kind === 'interview' ? 'think' : d.kind === 'podd' ? 'open' : 'cross');
       cl.classList.add('enter-left'); cr.classList.add('enter-right');
-      topicEl.innerHTML = `${esc(d.name)}<small>${d.campaign ? 'VALRÖRELSE · ' : ''}${esc(d.host === 'riksdag' ? 'Riksdagens kammare' : MEDIA[d.host]?.name || 'TV-studion')}</small>`;
-      const mod = d.kind === 'interview' ? op : { name: d.kind === 'riksdag' ? 'Talmannen' : 'Programledaren' };
-      await say(null, mod, d.kind === 'interview' ? `Välkommen till ${MEDIA[d.host]?.name || 'studion'}. I kväll frågar vi ut ${ml.name}, partiledare för ${me.name}.` : d.kind === 'riksdag' ? `Kammaren inleder partiledardebatten. Ordet går till ${op.name}, ${opP.name}.` : `Välkomna till ${d.name}! I kväll möts ${ml.name} (${me.abbr}) och ${op.name} (${opP.abbr}).`, { dim: false });
+      topicEl.innerHTML = `${esc(d.name)}<small>${d.campaign ? 'VALRÖRELSE · ' : ''}${esc(d.kind === 'podd' ? 'Inspelning' : d.host === 'riksdag' ? 'Riksdagens kammare' : MEDIA[d.host]?.name || 'TV-studion')}</small>`;
+      const mod = d.kind === 'interview' || d.kind === 'podd' ? op : { name: d.kind === 'riksdag' ? 'Talmannen' : 'Programledaren' };
+      await say(null, mod, d.kind === 'podd' ? `Hej hej, välkomna till ${op.name}! I dag har vi med oss ${ml.name} från ${me.name}. Luta er tillbaka.` : d.kind === 'interview' ? `Välkommen till ${MEDIA[d.host]?.name || 'studion'}. I kväll frågar vi ut ${ml.name}, partiledare för ${me.name}.` : d.kind === 'riksdag' ? `Kammaren inleder partiledardebatten. Ordet går till ${op.name}, ${opP.name}.` : `Välkomna till ${d.name}! I kväll möts ${ml.name} (${me.abbr}) och ${op.name} (${opP.abbr}).`, { dim: false });
       for (let i = 0; i < d.rounds.length; i++) {
         const r = d.rounds[i]; const is = ISSUE_BY_ID[r.issue];
         topicEl.innerHTML = `Runda ${i + 1}/${d.rounds.length}: ${esc(is.name)}<small>${esc(d.name)}</small>`;
-        await say('right', op, r.statement, { expr: r.interview ? 'neutral' : r.opExpr, pose: r.interview ? 'think' : i % 2 ? 'point' : 'cross' });
+        await say('right', op, r.statement, { expr: r.podd ? 'happy' : r.interview ? 'neutral' : r.opExpr, pose: r.podd ? 'open' : r.interview ? 'think' : i % 2 ? 'point' : 'cross' });
         const idx = await choose(r.options);
         const o = r.options[idx];
         if (o.type === 'invandning') { await burst('INVÄNDNING!'); flash(); if (o.evidence) showEvidence(o.evidence); }
