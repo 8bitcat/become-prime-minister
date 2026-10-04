@@ -6,8 +6,17 @@ se allt rasa. Ingenting är förutbestämt: händelser, skandaler, nyheter och o
 fram ur dina beslut, din ideologi, din partiledares personlighet och Sveriges utveckling.
 
 Debatter, intervjuer och utfrågningar spelas som anime-scener i rättegångsspelens anda:
-figurer med uttryck och poser, textruta med skrivmaskinstext, argumentval, publikmätare och
-**INVÄNDNING!** när motståndaren motsäger sin egen röstning i riksdagen.
+figurer med uttryck och poser, textruta med skrivmaskinstext, publikmätare och
+**INVÄNDNING!** när motståndaren motsäger sin egen röstning – eller har fel siffror.
+
+**Du väljer inte svar – du skriver dem själv.** Inlägg, debattsvar, presskonferenser, tal,
+utspel, förhandlingsbud, erbjudanden i regeringsbildningen och enskilda samtal skrivs i fri
+text. Spelet läser vad du faktiskt skrev (ton, sakfrågor, om du svarar på frågan, löften med
+siffror, faktapåståenden, angrepp, motsägelser mot vad du sagt förr) och låter världen reagera:
+kommentarsfält, följdfrågor, avbrott, faktakoll, läckor, framgrävda uttalanden och löfteskoll.
+Analysen är inbyggd och fungerar utan nätverk. Lägger du in en egen Anthropic-nyckel under
+☰ Meny → AI-läge läser **Claude** dina texter i stället och skriver journalisternas,
+motståndarnas och väljarnas repliker. Nyckeln stannar i din webbläsare.
 
 ## Spela
 
@@ -29,7 +38,18 @@ Sparfilen kan exporteras/importeras som JSON från menyn.
 - **Partiledaren**: vanliga människor i anime-grafik – kroppstyp, 19 frisyrer, 27 plagg med egna
   färger, ansiktsdetaljer, stil, röst, kroppsspråk, 40 yrken med trovärdighet i sakfrågor, politisk
   erfarenhet, familj, livsåskådning, personlighetsdrag och offentlig image (äkthet). Tio egenskaper
-  styr debatter, kriser, förhandlingar och skandalrisk.
+  styr debatter, kriser, förhandlingar och skandalrisk. Ett galleri med 40 tecknade figurer
+  (genererade karaktärsark i sex poser, `assets/chars/`) väljs ur eller matchas mot utseendet;
+  SVG-dockan är reserv.
+- **Fri text överallt**: inlägg med levande kommentarsfält (väljare, motståndare, journalister,
+  influerare – och du kan svara, radera eller rätta dig), debatter där du skriver svaret och
+  journalister ställer följdfrågor när du inte svarar, motståndare som avbryter och kan ha fel
+  siffror, presskonferenser med frågor i och utanför ämnet, tal som publiken reagerar på mening för
+  mening, utspel där löften med siffror följs upp, motbud i förhandlingar, skriftliga erbjudanden i
+  regeringsbildningen (hemliga uppgörelser som kan läcka), enskilda samtal med partiledare,
+  partikamrater och journalister off record (som kan läcka), fokusgrupper, ett politiskt minne av
+  allt du sagt (motsägelser, framgrävda uttalanden), faktakoll, programförklaring och egen ideologi
+  i egna ord, ministrar som protesterar eller avgår, ledamöter som bryter partilinjen, trötthet.
 - **Politiken som verktygssystem**: 132 områden i 14 domäner med gällande lag, partiprogram,
   effekter, kostnad och genomförandetid. Ideologi och kompass härleds ur programmet. Reformer röstas i
   riksdagen efter partiernas program, kostar politiskt kapital, genomförs med fördröjning, bromsas av
@@ -69,7 +89,10 @@ node tools/serve.mjs 8790        # dev-server
 node tools/sim-test.mjs 220 new  # huvudlös simulering (220 veckor, nytt parti)
 node tools/smoke.mjs             # röktest i webbläsaren (Playwright) → tools/out/*.png
 node tools/val-test.mjs          # valrörelse, valnatt, regeringsbildning
+node tools/text-test.mjs         # fritextlagret: analys, minne, debattsvar, tal, samtal …
 node tools/shot.mjs "tools/portrait-preview.html?seed=7" tools/out/p.png   # figurgalleri
+node tools/comfy-chars.mjs       # generera karaktärsark med Z-Image Turbo i ComfyUI (127.0.0.1:8188)
+python tools/slice-chars.py      # skiva arken till assets/chars/<id>/<pose>.webp + manifest.json
 ```
 
 Släpp: `node tools/release.mjs minor --title "…" --scope … --notes n.md -- <filer>` →

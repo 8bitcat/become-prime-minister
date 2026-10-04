@@ -30,6 +30,7 @@ try {
   const out = [];
   const run = (args) => new Promise((resolve) => { out.push(`\n=== ${args.join(' ')} ===\n`); const p = spawn('node', args, { cwd: dir, env: { ...process.env, SMOKE_PORT: port }, stdio: ['ignore', 'pipe', 'pipe'] }); p.stdout.on('data', (b) => out.push(b.toString())); p.stderr.on('data', (b) => out.push(b.toString())); p.on('close', (c) => resolve(c ?? 1)); });
   code = await run(['tools/sim-test.mjs', '160', 'new', '3']);
+  const c1 = await run(['tools/text-test.mjs']); if (c1) code = code || c1;
   const c2 = await run(['tools/smoke.mjs']); if (c2) code = code || c2;
   const c3 = await run(['tools/val-test.mjs']); if (c3) code = code || c3;
   const log = out.join('');

@@ -8,7 +8,7 @@ import { defaultPolicy } from '../data/policies.js';
 import { programFromAxes } from './policy.js';
 
 const START_IDEOLOGY = { s: 'socialdemokrati', sd: 'nationalkonservatism', m: 'liberalkonservatism', v: 'dem_socialism', c: 'gron_liberalism', kd: 'kristdemokrati', mp: 'gron', l: 'liberalism' };
-export const CURRENT_SAVE = 3;
+export const CURRENT_SAVE = 4;
 
 export function migrate(state) {
   const rnd = makeRng((state.seed || 1) ^ 0x5a5a);
@@ -38,6 +38,11 @@ export function migrate(state) {
   if (!state.policy) { state.policy = defaultPolicy(); const s = state.sweden.stats; for (const k of Object.keys(state.policy)) if (s[k] != null && typeof s[k] === 'number') state.policy[k] = s[k]; }
   state.reforms ||= []; state.sweden.priceIndex ||= 1 + (state.sweden.months || 0) * .002; state.sweden.stats.integritet ??= 75;
   state.government.capital ??= 50; state.riksdag.vilande ||= [];
+  // v4: politiskt minne, fritext-inlägg, trötthet, hemliga uppgörelser
+  state.memory ||= { statements: [], persona: { saklig: 0, kampande: 0, aggressiv: 0, humor: 0, kansla: 0, undvikande: 0, n: 0 }, promises: [], corrections: 0 };
+  state.secretDeals ||= [];
+  for (const po of state.social?.posts || []) { po.comments ||= []; po.deleted ??= false; }
+  for (const per of Object.values(state.people)) per.fatigue ??= 0;
   state.v = CURRENT_SAVE;
   return from;
 }

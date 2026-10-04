@@ -29,8 +29,41 @@ export function willingness(state, q, p) {
   let w = 70 - d * 1.2 + rel * .5 + (q.bloc === p.bloc && q.bloc !== 'none' ? 25 : 0) - (p.ext === 2 ? 25 : 0) - (p.ext === 1 && q.ext === 0 ? 5 : 0);
   if (p.isPlayer && (p.credibility < 45)) w -= (45 - p.credibility);
   if (!p.inRiksdag) w -= 30;
+  if (p.isPlayer && q.offerBonus) w += q.offerBonus; // skriftligt erbjudande under regeringsbildningen
   return clamp(w, -50, 100);
 }
+
+// Ministrar har egen vilja: de kan protestera offentligt mot regeringens linje – och avgå.
+export function monthlyMinisters(state, rnd) {
+  const out = []; const gov = state.government; if (!gov.pm) return out;
+  const playerPM = gov.pm === state.player.leaderId; const me = state.parties[state.player.partyId];
+  for (const [mid, pid] of Object.entries(gov.ministers || {})) {
+    const per = state.people[pid]; if (!per || !per.alive) continue;
+    const m = MINISTRIES.find((x) => x.id === mid); const q = state.parties[per.partyId]; if (!m || !q) continue;
+    // reformer den senaste tiden som går emot ministerns partis linje i det egna området
+    const recent = (state.reforms || []).filter((r) => r.start > state.week - 6 && POLICY_AXES(r.policyId)[m.issue]);
+    let friction = 0;
+    for (const r of recent) { const pol = POLICY_BY_ID[r.policyId]; const ax = pol.axes || {}; const dv = pol.type === 'choice' ? ((pol.options.find((o) => o.id === r.to)?.v ?? 0) - (pol.options.find((o) => o.id === r.from)?.v ?? 0)) : (r.to - r.from); const dir = Math.sign((ax[m.issue] || 0) * dv); const pos = q.pos[m.issue] || 0; if (Math.abs(pos) > 35 && dir && Math.sign(pos) !== dir) friction += 1; }
+    const unhappy = friction > 0 || gov.approval < 28 || (per.loyalty ?? 60) < 30;
+    if (!unhappy) continue;
+    const pResign = .015 + friction * .05 + (gov.approval < 28 ? .03 : 0) + ((per.ambition ?? 50) > 70 ? .02 : 0) + ((per.loyalty ?? 60) < 30 ? .05 : 0);
+    if (rnd() < pResign) {
+      delete gov.ministers[mid]; per.role = 'mp'; delete per.ministry; per.loyalty = Math.max(0, (per.loyalty ?? 60) - 20);
+      gov.crisis = (gov.crisis || 0) + 1; if (q.isPlayer) q.unity = clamp(q.unity - 4, 0, 100);
+      const why = friction ? `"Jag kan inte stå bakom regeringens linje om ${ISSUES.find((i) => i.id === m.issue)?.name.toLowerCase()}."` : gov.approval < 28 ? '"Regeringen har tappat folkets förtroende."' : '"Av personliga skäl."';
+      addNewsLater(state, { outlet: 'svt', headline: `${per.name} avgår som ${m.name.toLowerCase()}`, body: `${why} ${playerPM ? 'Statsministern måste nu hitta en ersättare – ombilda under Regeringen.' : `Statsminister ${state.people[gov.pm]?.name} säger sig "respektera beslutet".`}`, tags: ['politik'], partyId: q.id, importance: 3, tone: -1 });
+      if (playerPM) out.push({ type: 'note', title: `${per.name} avgår`, text: `${per.name} lämnar posten som ${m.name.toLowerCase()}. ${why} Posten är vakant tills du ombildar regeringen.` });
+    } else if (friction && rnd() < .35) {
+      gov.crisis = (gov.crisis || 0) + .5;
+      addNewsLater(state, { outlet: 'dn', headline: `${per.name} går emot regeringen: "Fel väg"`, body: `${m.name}n kritiserar öppet regeringens beslut om ${ISSUES.find((i) => i.id === m.issue)?.name.toLowerCase()}. ${playerPM ? 'Oppositionen talar om kaos i regeringen.' : ''}`, tags: ['politik'], partyId: q.id, importance: 2, tone: -1 });
+    }
+  }
+  return out;
+}
+const POLICY_AXES = (id) => POLICY_BY_ID[id]?.axes || {};
+const addNewsLater = (state, n) => addNews(state, n);
+import { POLICY_BY_ID } from '../data/policies.js';
+import { addNews } from './news.js';
 
 // Vilka partier kan tänkas tolerera (inte rösta nej mot) en statsminister från parti p?
 // round = talmansrunda (1…4). Ju fler rundor, desto fler lägger ner sina röster hellre än att tvinga fram extraval.

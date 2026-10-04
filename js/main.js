@@ -6,6 +6,7 @@ import { UI, processQueue } from './ui/game.js';
 import { newGame } from './sim/newgame.js';
 import { toast } from './ui/modal.js';
 import { migrate } from './sim/migrate.js';
+import { loadSprites } from './art/sprites.js';
 
 function showStart() { G.state = null; renderStart({ onNew: showSetup, onLoad: startSlot }); }
 function showSetup() { renderSetup({ onDone: (def) => { const { state, rnd } = newGame(def); G.state = state; G.rnd = rnd; G.slot = def.slot; save(); enterGame(); }, onCancel: showStart }); }
@@ -22,5 +23,7 @@ window.BPM = { G, UI, showStart, newGame, save, load, listSaves, processQueue };
 
 const params = new URLSearchParams(location.search);
 const saves = listSaves();
+// Rollgalleriet (tecknade figurer) laddas först – SVG-dockan är reserv om det saknas
+await loadSprites();
 if (params.get('slot') && !saves[+params.get('slot') - 1]?.empty) startSlot(+params.get('slot'));
 else showStart();

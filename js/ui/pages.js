@@ -6,13 +6,16 @@ import { REGIONS } from '../data/regions.js';
 import { STATS, STAT_BY_ID, CATS, REGIONAL_STATS } from '../data/stats.js';
 import { MEDIA, POLL_INSTITUTES } from '../data/names.js';
 import { logoSVG } from '../art/logo.js';
-import { characterSVG } from '../art/character.js';
+import { characterArt as characterSVG } from '../art/sprites.js';
+import { personaLabel, statementKindLabel } from '../ai/memory.js';
+import { toneLabel } from '../ai/analyze.js';
+import { llmEnabled } from '../ai/llm.js';
 import { lineChart, sparkline, hemicycle, seatBar, barRow } from './charts.js';
 import { activeParties, regionalSupport } from '../sim/opinion.js';
 import { ACTIONS, actionAvailable, weeklyMoney } from '../sim/turn.js';
 import { BILL_BY_ID, BILLS, stance, aiVote } from '../sim/riksdag.js';
 import { MINISTRIES, isPlayerPM, playerInGov, willingness } from '../sim/government.js';
-import { PLATFORMS, followersOf } from '../sim/social.js';
+import { PLATFORMS, FORMATS, followersOf } from '../sim/social.js';
 import { TRAITS, traitLabel, personSummary, personaSummary } from '../sim/people.js';
 import { structureSummary, economyLines, STRUCTURE_OPTIONS } from '../sim/party.js';
 import { trustLabel } from '../sim/promises.js';
@@ -113,12 +116,13 @@ export function pageParty(s, ui) {
   el.innerHTML = `<div class="page-title"><h2>Partiet</h2></div>`;
   const g = h('div', { class: 'grid c3' });
   const idc = card('Identitet', `<div class="row" style="align-items:flex-start"><div class="hero-logo">${logoSVG(p, 100)}</div><div><b style="font-size:20px">${esc(p.name)}</b> (${esc(p.abbr)})<br><small class="muted">"${esc(p.slogan)}"</small><br><small>Grundat ${p.founded} · ${fmt(p.members)} medlemmar</small></div></div>
-    <div style="margin-top:6px"><small class="muted">${esc(ideologyLabel(p.ideology?.primary, p.ideology?.secondary))}${p.ext >= 2 ? ' · <span class="danger">' + (p.ext >= 3 ? 'systemfientligt' : 'radikalt') + '</span>' : ''}</small></div>
+    <div style="margin-top:6px"><small class="muted">${p.ideologyName ? '<b>' + esc(p.ideologyName) + '</b> · ' : ''}${esc(ideologyLabel(p.ideology?.primary, p.ideology?.secondary))}${p.ext >= 2 ? ' · <span class="danger">' + (p.ext >= 3 ? 'systemfientligt' : 'radikalt') + '</span>' : ''}</small></div>
+    ${p.manifesto ? `<div style="margin-top:6px;font-size:13px;line-height:1.45"><b>Programförklaring</b><br>${esc(p.manifesto)}</div>` : ''}
     <div style="margin-top:12px">${barRow('Organisation', p.org, 100)}${barRow('Sammanhållning', p.unity, 100, p.unity < 45 ? 'var(--red)' : 'var(--green)')}${barRow('Trovärdighet', p.credibility, 100, 'var(--blue)')}${barRow('Förtroende', p.trust ?? 50, 100, 'var(--green)', trustLabel(p.trust ?? 50))}${barRow('Uppmärksamhet', p.attention, 100, 'var(--orange)')}${barRow('Skandalrisk', Math.min(100, partyRisk(s, p) * 2.5), 100, 'var(--red)', fmt(partyRisk(s, p), 1) + '‰/v')}${barRow('Aktivister', p.activists || 0, Math.max(100, p.members * .15), 'var(--gold)', fmt(p.activists || 0))}</div>
     <div style="margin-top:12px"><b>Ekonomi</b> <small class="muted">kassa ${kr(p.money)}</small><table>${economyLines(s, p).income.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num up">+${kr(v)}/v</td></tr>`).join('')}${economyLines(s, p).cost.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num down">−${kr(v)}/v</td></tr>`).join('')}<tr><td><b>Netto</b></td><td class="num ${weeklyMoney(s).income - weeklyMoney(s).cost >= 0 ? 'up' : 'down'}"><b>${signed((weeklyMoney(s).income - weeklyMoney(s).cost) / 1000, 0, ' tkr/v')}</b></td></tr></table></div>`);
   const lc = card('Partiledaren', `<div class="row" style="align-items:flex-start"><div class="face lg" style="width:96px;height:120px">${characterSVG(l, { crop: 'head', expr: 'confident', id: 'pl' })}</div><div><b style="font-size:18px">${esc(l.name)}</b><br><small class="muted">${esc(personSummary(l))}</small><br><small>Partiledare sedan ${fmtDate(l.since || s.date)} · stöd ${pct(l.approval, 0)}</small></div></div>
-    <div style="margin:8px 0"><small>${esc(personaSummary(l))}${l.persona?.image ? ' · image: <b>' + esc(PUBLIC_IMAGE.find((x) => x.id === l.persona.image)?.name || '') + '</b> (' + (authenticity(l) >= .55 ? '<span class="ok">äkta</span>' : authenticity(l) >= .4 ? 'delvis trovärdig' : '<span class="danger">spelad</span>') + ')' : ''}${Object.keys(l.cred || {}).length ? '<br>Trovärdig i: ' + Object.keys(l.cred).map((k) => esc(ISSUE_BY_ID[k].short.toLowerCase())).join(', ') : ''}</small></div>
-    <div style="margin-top:10px">${TRAITS.map((t) => barRow(t.name, l.traits[t.id], 100, l.traits[t.id] >= 65 ? 'var(--green)' : l.traits[t.id] < 35 ? 'var(--red)' : 'var(--gold)', traitLabel(l.traits[t.id]))).join('')}</div><button class="btn sm ghost" id="avga" style="margin-top:8px">🚪 Lämna partiledarposten</button>`);
+    <div style="margin:8px 0"><small>${esc(personaSummary(l))}${l.persona?.image ? ' · image: <b>' + esc(PUBLIC_IMAGE.find((x) => x.id === l.persona.image)?.name || '') + '</b> (' + (authenticity(l) >= .55 ? '<span class="ok">äkta</span>' : authenticity(l) >= .4 ? 'delvis trovärdig' : '<span class="danger">spelad</span>') + ')' : ''}${Object.keys(l.cred || {}).length ? '<br>Trovärdig i: ' + Object.keys(l.cred).map((k) => esc(ISSUE_BY_ID[k].short.toLowerCase())).join(', ') : ''}${personaLabel(s) ? '<br>Uppfattas som: <b>' + esc(personaLabel(s)) + '</b> (av det du skrivit och sagt)' : ''}</small></div>
+    <div style="margin-top:10px">${TRAITS.map((t) => barRow(t.name, l.traits[t.id], 100, l.traits[t.id] >= 65 ? 'var(--green)' : l.traits[t.id] < 35 ? 'var(--red)' : 'var(--gold)', traitLabel(l.traits[t.id]))).join('')}${barRow('Trötthet', l.fatigue || 0, 100, (l.fatigue || 0) > 70 ? 'var(--red)' : 'var(--muted)', (l.fatigue || 0) > 70 ? 'utbränd?' : (l.fatigue || 0) > 40 ? 'sliten' : 'pigg')}</div><button class="btn sm ghost" id="avga" style="margin-top:8px">🚪 Lämna partiledarposten</button>`);
   lc.querySelector('#avga').addEventListener('click', () => ui.action(ACTIONS.find((a) => a.id === 'avga')));
   const idd = ideologyDescription(p.program || {});
   const pos = card(`<span>Politiken</span><button class="btn sm" id="chg">Ändra program</button>`, `<p style="margin:0 0 6px"><b>${esc(idd.label)}</b><br><small class="muted">${idd.tags.map(esc).join(' · ') || 'nära mitten'}</small></p>${compassSVG(idd.compass, 380)}<table>${ISSUES.map((is) => `<tr><td>${esc(is.name)}</td><td class="num" style="width:70px"><span class="${p.pos[is.id] < 0 ? 'down' : 'up'}" style="font-variant-numeric:tabular-nums">${p.pos[is.id] > 0 ? '+' : ''}${p.pos[is.id]}</span></td><td><small class="muted">${esc(issueLabel(is.id, p.pos[is.id]))}${p.profile?.[is.id] > 1.1 ? ' · <span class="tag gold">hjärtefråga</span>' : ''}</small></td></tr>`).join('')}</table>`);
@@ -256,8 +260,9 @@ export function pageSocial(s, ui) {
   const feed = h('div', { class: 'grid c2', style: 'margin-top:14px' });
   for (const po of posts) {
     const pl = PLATFORMS.find((x) => x.id === po.platform);
-    const d = h('div', { class: 'post' });
-    d.innerHTML = `<div class="head"><div class="av">${characterSVG(l, { crop: 'face', id: 'av' + po.id })}</div><b>${esc(l.name)}</b><span class="muted">${pl.icon} ${esc(pl.name)} · ${fmtDate(po.date)}</span>${po.resurfaced ? '<span class="tag red">grävdes fram</span>' : ''}${po.landedWrong ? '<span class="tag red">landade fel</span>' : ''}</div><div class="body">${esc(po.text)}</div><div class="stats"><span>👁 ${fmt(po.reach)}</span><span>❤️ ${fmt(po.likes)}</span><span>➕ ${fmt(po.newFollowers)} följare</span><span>⚠️ risk ${po.risk}</span></div>`;
+    const d = h('div', { class: 'post clickable' + (po.deleted ? ' deleted' : '') });
+    d.innerHTML = `<div class="head"><div class="av">${characterSVG(l, { crop: 'face', id: 'av' + po.id })}</div><b>${esc(l.name)}</b><span class="muted">${pl.icon} ${esc(pl.name)} · ${fmtDate(po.date)}</span>${po.dominant ? `<span class="tag">${esc(toneLabel(po.dominant))}</span>` : ''}${po.resurfaced ? '<span class="tag red">grävdes fram</span>' : ''}${po.landedWrong ? '<span class="tag red">landade fel</span>' : ''}${po.deleted ? '<span class="tag red">raderat</span>' : ''}${po.reach > 300000 ? '<span class="tag gold">viralt</span>' : ''}</div><div class="body">${esc(po.text)}</div><div class="stats"><span>👁 ${fmt(po.reach)}</span><span>❤️ ${fmt(po.likes)}</span><span>➕ ${fmt(po.newFollowers)} följare</span><span>💬 ${(po.comments || []).length}</span><span>⚠️ risk ${po.risk}</span></div>`;
+    d.addEventListener('click', () => ui.openPost(po));
     feed.append(d);
   }
   if (!posts.length) feed.append(h('div', { class: 'empty' }, 'Inga inlägg ännu.'));
@@ -265,24 +270,24 @@ export function pageSocial(s, ui) {
   return el;
 }
 function composeForm(s, ui) {
-  const p = me(s);
-  const f = h('div', {});
+  const p = me(s); const l = leader(s);
+  const f = h('div', { class: 'composer' });
+  const hot = [...ISSUES].sort((a, b) => s.opinion.salience[b.id] - s.opinion.salience[a.id]).slice(0, 3);
+  const news = s.news[0];
+  const sugg = [{ label: `Om ${hot[0].name.toLowerCase()}`, text: `${hot[0].name} kan inte vänta längre. Vi föreslår … – konkret, finansierat och från dag ett.` }, { label: 'Reagera på nyhet', text: news ? `"${news.headline}". Det här är precis det vi varnat för. Vår linje är tydlig: …` : 'Dagens nyhet visar …' }, { label: 'Personligt', text: `Satt vid köksbordet i kväll och tänkte på ${hot[1].name.toLowerCase()}. Det är därför jag gör det här.` }];
   f.innerHTML = `<div class="field"><label>Plattform</label><div class="chips" id="pl">${PLATFORMS.map((x, i) => `<span class="chip ${i === 0 ? 'on' : ''}" data-v="${x.id}">${x.icon} ${x.name}</span>`).join('')}</div></div>
-    <div class="field"><label>Typ</label><div class="chips" id="kind"><span class="chip on" data-v="issue">Politisk fråga</span><span class="chip" data-v="news">Reagera på nyhet</span><span class="chip" data-v="attack">Angrip parti</span></div></div>
-    <div class="field" id="issueF"><label>Fråga</label><select id="issue">${ISSUES.map((i) => `<option value="${i.id}">${i.name}</option>`).join('')}</select></div>
-    <div class="field" id="newsF" style="display:none"><label>Nyhet</label><select id="news">${s.news.slice(0, 12).map((n) => `<option value="${n.id}">${esc(n.headline.slice(0, 70))}</option>`).join('')}</select></div>
-    <div class="field" id="targetF" style="display:none"><label>Parti</label><select id="target">${activeParties(s).filter((q) => !q.isPlayer).map((q) => `<option value="${q.id}">${esc(q.name)}</option>`).join('')}</select></div>
-    <div class="field"><label>Ton</label><div class="chips" id="tone"></div><div class="hint" id="toneHint"></div></div>
-    <div class="field"><label>Format</label><div class="chips" id="fmt"></div></div>
+    <textarea id="postText" rows="5" maxlength="900" placeholder="Skriv inlägget med egna ord. Ton, frågor, löften, siffror och angrepp läses av spelet – och av väljarna."></textarea>
+    <div class="adviser" id="adv">${llmEnabled() ? 'Claude läser inlägget när du publicerar.' : 'Rådgivaren läser medan du skriver – och kan ha fel.'}</div>
+    <div class="sugg" id="sugg"><small>Utgå från:</small>${sugg.map((x, i) => `<span class="chip" data-i="${i}" title="${esc(x.text)}">${esc(x.label)}</span>`).join('')}</div>
+    <div class="field" style="margin-top:8px"><label>Format</label><div class="chips" id="fmt">${FORMATS.map((t, i) => `<span class="chip ${i === 0 ? 'on' : ''}" data-v="${t.id}">${t.name}</span>`).join('')}</div></div>
     <button class="btn gold block" id="send" ${s.ap < 1 ? 'disabled' : ''}>Publicera (1 AP)</button>`;
-  import('../sim/social.js').then(({ TONES, FORMATS }) => {
-    f.querySelector('#tone').innerHTML = TONES.map((t, i) => `<span class="chip ${i === 0 ? 'on' : ''}" data-v="${t.id}" title="${esc(t.desc)}">${t.name}</span>`).join('');
-    f.querySelector('#fmt').innerHTML = FORMATS.map((t, i) => `<span class="chip ${i === 0 ? 'on' : ''}" data-v="${t.id}">${t.name}</span>`).join('');
-    f.querySelector('#toneHint').textContent = TONES[0].desc;
-    f.querySelectorAll('.chips').forEach((ch) => ch.addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; ch.querySelectorAll('.chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); if (ch.id === 'tone') f.querySelector('#toneHint').textContent = TONES.find((t) => t.id === c.dataset.v).desc; if (ch.id === 'kind') { f.querySelector('#issueF').style.display = c.dataset.v === 'attack' ? 'none' : ''; f.querySelector('#newsF').style.display = c.dataset.v === 'news' ? '' : 'none'; f.querySelector('#targetF').style.display = c.dataset.v === 'attack' ? '' : 'none'; } }));
-  });
+  const ta = f.querySelector('#postText'); let tmr;
+  import('../scene/debate.js').then(({ adviserLine }) => { ta.addEventListener('input', () => { clearTimeout(tmr); tmr = setTimeout(() => { f.querySelector('#adv').textContent = adviserLine(ta.value, { stats: s.sweden.stats, parties: activeParties(s).filter((q) => !q.isPlayer) }) || f.querySelector('#adv').textContent; }, 250); }); });
+  f.querySelector('#sugg').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; ta.value = sugg[+c.dataset.i].text; ta.dispatchEvent(new Event('input')); ta.focus(); });
+  f.querySelectorAll('#pl, #fmt').forEach((ch) => ch.addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; ch.querySelectorAll('.chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); }));
   const sel = (id) => f.querySelector('#' + id + ' .chip.on')?.dataset.v;
-  f.querySelector('#send').addEventListener('click', () => { const kind = sel('kind'); ui.post({ platform: sel('pl'), kind, issue: kind === 'attack' ? ISSUES[0].id : f.querySelector('#issue').value, tone: sel('tone'), format: sel('fmt'), target: kind === 'attack' ? f.querySelector('#target').value : null, newsItem: kind === 'news' ? s.news.find((n) => n.id === f.querySelector('#news').value) : null }); });
+  f.querySelector('#send').addEventListener('click', () => ui.post({ platform: sel('pl'), format: sel('fmt'), text: ta.value.trim() }));
+  ta.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') f.querySelector('#send').click(); });
   return f;
 }
 
@@ -357,6 +362,11 @@ export function pageHistory(s, ui) {
   g2.append(card('Partiledare genom tiderna', `<table><tr><th>Namn</th><th>Parti</th><th>Period</th><th>Avgick</th></tr>${(s.history?.leaders || []).slice().reverse().slice(0, 30).map((l) => `<tr><td>${esc(l.name)}</td><td>${esc(partyName(s, l.partyId))}</td><td>${l.from ? l.from.y : '?'}–${l.to ? l.to.y : ''}</td><td><small class="muted">${esc(l.reason || (l.to ? '' : 'sitter'))}</small></td></tr>`).join('')}</table>`));
   el.append(g2);
   if ((s.history?.bios || []).length) el.append(h('div', { style: 'margin-top:14px' }, card('Politiska biografier', s.history.bios.slice(0, 10).map((b) => `<div class="item"><div class="top"><b>${esc(b.name)}</b><span class="tag">${esc(partyName(s, b.partyId))}</span></div><small>${esc(b.text)}</small></div>`).join(''))));
+  const mem = s.memory || { statements: [], promises: [] };
+  const g4 = h('div', { class: 'grid c2', style: 'margin-top:14px' });
+  g4.append(card(`Allt du sagt <small class="muted">${mem.statements.length} uttalanden i minnet</small>`, mem.statements.slice(-25).reverse().map((st) => `<div class="item ${st.deleted ? 'deleted' : ''}"><div class="top"><b>${esc(statementKindLabel(st.kind))} · v${st.week}</b><span>${st.dominant ? `<span class="tag">${esc(toneLabel(st.dominant))}</span>` : ''}${st.contradictions?.length ? '<span class="tag red">motsägelse</span>' : ''}${st.factChecked ? '<span class="tag red">faktafel</span>' : ''}${st.leaked ? '<span class="tag red">läckt</span>' : ''}${st.resurfaced ? '<span class="tag gold">framgrävt</span>' : ''}${st.deleted ? '<span class="tag red">raderat</span>' : ''}</span></div><small>${esc(st.text.slice(0, 200))}${st.text.length > 200 ? '…' : ''}</small>${st.question ? `<div class="meta">på frågan: ${esc(st.question.slice(0, 90))}</div>` : ''}</div>`).join('') || '<div class="empty">Allt du skriver sparas här – och i journalisternas minne.</div>'));
+  g4.append(card(`Löften i egna ord <small class="muted">${mem.promises.length}</small>`, mem.promises.slice(-20).reverse().map((pr) => `<div class="item"><div class="top"><b>${esc(pr.text.slice(0, 90))}</b><span class="tag ${pr.checked === 'hållet' ? 'green' : pr.checked === 'brutet' ? 'red' : pr.checked ? '' : 'gold'}">${esc(pr.checked || 'följs upp')}</span></div><div class="meta">${esc(statementKindLabel(pr.kind))} · v${pr.week}${pr.number != null ? ` · ${fmt(pr.number)} ${esc(pr.unit || '')}` : pr.absolute ? ' · absolut ("aldrig/alltid")' : ''}${pr.stat ? ` · mäts mot ${esc(STAT_BY_ID[pr.stat]?.name.toLowerCase() || pr.stat)}` : ' · går inte att mäta'}</div></div>`).join('') || '<div class="empty">Konkreta löften (med siffror) sparas här och granskas av medierna inför valet.</div>'));
+  el.append(g4);
   el.append(h('div', { style: 'margin-top:14px' }, card('Händelser', `<div class="timeline">${s.events.log.slice(0, 30).map((e) => `<div class="ev"><small>v${e.week}</small><div>${esc(e.title)}</div></div>`).join('') || '<div class="empty">Inga</div>'}</div>`)));
   return el;
 }

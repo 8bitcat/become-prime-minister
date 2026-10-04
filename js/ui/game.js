@@ -4,7 +4,11 @@ import { h, esc, fmt, pct, kr, signed, fmtDate, weekNo, clamp } from '../core/ut
 import { ISSUES, ISSUE_BY_ID, issueLabel } from '../data/issues.js';
 import { REGIONS } from '../data/regions.js';
 import { logoSVG } from '../art/logo.js';
-import { characterSVG } from '../art/character.js';
+import { characterArt as characterSVG } from '../art/sprites.js';
+import { postFlow, threadDialog, pressFlow, speechFlow, talkFlow, utspelFlow, fokusFlow, statementDialog, aiSettingsDialog, textDialog } from './freetext.js';
+import { negotiationCounter } from '../sim/talk.js';
+import { analyze } from '../ai/generate.js';
+import { llmEnabled } from '../ai/llm.js';
 import { modal, choice, info, toast } from './modal.js';
 import { PAGES, pollBars, newsFeed, expectedVote } from './pages.js';
 import { endWeek, doAction, ACTIONS } from '../sim/turn.js';
@@ -12,7 +16,7 @@ import { activeParties } from '../sim/opinion.js';
 import { BILLS, BILL_BY_ID, stance, resolveVote, negotiationDemand, applyDeal } from '../sim/riksdag.js';
 import { applyEventChoice } from '../sim/events.js';
 import { RESPONSES, respondScandal } from '../sim/scandals.js';
-import { composePost, PLATFORMS } from '../sim/social.js';
+import { PLATFORMS } from '../sim/social.js';
 import { applyElection } from '../sim/election.js';
 import { isPlayerPM, playerInGov, dissolveGovernment, MINISTRIES, formGovernmentAI, willingness } from '../sim/government.js';
 import { addNews } from '../sim/news.js';
@@ -41,7 +45,9 @@ export const UI = {
   action(a, extra) { actionDialog(a, extra); },
   programModal() { modal({ title: 'Partiprogrammet', body: programModalBody(G.state), wide: true, buttons: [{ label: 'Stäng', cls: 'gold' }] }); },
   currentPage: null,
-  post(params) { postFlow(params); },
+  post(params) { postFlow(params, UI); },
+  openPost(po) { threadDialog(po, UI).then(() => renderShell()); },
+  aiSettings() { aiSettingsDialog(); },
   budget() { budgetFlow(); },
   resign() { resignFlow(); },
   reshuffle() { reshuffleFlow(); },
@@ -124,6 +130,7 @@ async function handleQueueItem(item) {
     case 'scandal': return scandalDialog(s.scandals.find((x) => x.id === item.scandalId));
     case 'vote': return voteDialog(s.riksdag.bills.find((b) => b.id === item.billItemId));
     case 'resurfaced': return resurfacedDialog(s.social.posts.find((x) => x.id === item.postId));
+    case 'statement': return statementDialog(item, UI);
     case 'election': { const el = s.election.pending; if (!el) return; await runElectionNight(s, el); applyElection(s, el); s.election.pending = null; save(); s.queue.splice(1, 0, { type: 'formation', reason: 'val', round: 1 }); return; }
     case 'formation': { if (!s.government.pm || item.reason === 'val') { if (s.government.pm) dissolveGovernment(s, 'val'); await runFormation(s, rnd, item); } return; }
     case 'offer': return runOffer(s, rnd, item);
@@ -185,8 +192,13 @@ async function voteDialog(item) {
 // ---------- HANDLINGAR ----------
 async function actionDialog(a, extra = {}) {
   const s = G.state;
-  const run = async (params) => { const r = doAction(s, G.rnd, a.id, params); toast(r.text, r.ok ? 'good' : 'bad'); save(); renderShell(); };
+  const run = (params) => { const r = doAction(s, G.rnd, a.id, params); toast(r.text, r.ok ? 'good' : 'bad'); save(); renderShell(); return r; };
   if (!a.needs) return run({});
+  if (a.needs === 'press') return pressFlow(a, run, UI);
+  if (a.needs === 'speech') return speechFlow(a, run, UI);
+  if (a.needs === 'talk') return talkFlow(a, run, UI);
+  if (a.needs === 'utspel') return utspelFlow(a, run, UI);
+  if (a.needs === 'fokus') return fokusFlow(a, run, UI);
   if (a.needs === 'issue') { const i = await pickIssue(a.name); if (i == null) return; return run({ issue: i }); }
   if (a.needs === 'region') { const i = await choice({ title: a.name, text: 'Vart reser du?', choices: REGIONS.map((r) => ({ label: r.name, desc: `${r.pop} tusen inv.` })), wide: true }); return run({ region: REGIONS[i].id }); }
   if (a.needs === 'party') { const list = activeParties(s).filter((q) => !q.isPlayer); const i = await choice({ title: a.name, text: 'Vem träffar du?', choices: list.map((q) => ({ label: `${q.name}`, desc: `${s.people[q.leader].name} · relation ${q.relations?.[me().id] || 0}` })) }); return run({ party: list[i].id }); }
@@ -248,7 +260,7 @@ function createLeaderModal() {
     const L = blankLeader(G.rnd, G.rnd() < .5 ? 'k' : 'm');
     const body = h('div', {});
     const cr = renderLeaderCreator(body, L, { rnd: G.rnd });
-    const m = modal({ title: 'Skapa ny partiledare', body, wide: true, closable: false, buttons: [{ label: 'Avbryt', onClick: () => resolve(null) }, { label: 'Tillträd som partiledare', cls: 'gold', onClick: () => { const err = cr.validate(); if (err) { toast(err, 'bad'); return false; } const def = finalizeLeader(L); const per = makePerson(G.rnd, { partyId: me().id, role: 'leader', gender: def.gender, age: def.age, first: def.first, last: def.last, persona: def.persona, look: def.look, traits: def.traits }); per.name = def.name; per.bg = { ...def.bg }; per.baseTraits = { ...def.traits }; per.traits = applyPersona(def.traits, def.persona); per.cred = credOf(def.persona); per.approval = 35; resolve(per); } }] });
+    const m = modal({ title: 'Skapa ny partiledare', body, wide: true, closable: false, buttons: [{ label: 'Avbryt', onClick: () => resolve(null) }, { label: 'Tillträd som partiledare', cls: 'gold', onClick: () => { const err = cr.validate(); if (err) { toast(err, 'bad'); return false; } const def = finalizeLeader(L); const per = makePerson(G.rnd, { partyId: me().id, role: 'leader', gender: def.gender, age: def.age, first: def.first, last: def.last, persona: def.persona, look: def.look, traits: def.traits }); per.name = def.name; per.bg = { ...def.bg }; per.baseTraits = { ...def.traits }; per.traits = applyPersona(def.traits, def.persona); per.cred = credOf(def.persona); per.approval = 35; if (def.sprite) per.sprite = def.sprite; resolve(per); } }] });
     m.el.style.width = 'min(1240px, 98vw)';
   });
 }
@@ -328,18 +340,15 @@ async function negotiateDialog(itemId) {
   s.ap -= 1;
   const d = negotiationDemand(s, G.rnd, q, item);
   if (!d.possible) { save(); renderShell(); return info('Förhandlingen', `<p>${esc(d.reason)}</p>`); }
-  const j = await choice({ title: `${s.people[q.leader].name} (${q.abbr}) svarar`, text: `<p>"${esc(d.demand.text)}"</p><p class="muted">Pris: ${esc(d.demand.cost)}</p>`, choices: [{ label: 'Acceptera – vi har en uppgörelse', cls: 'green' }, { label: 'Tacka nej' }] });
-  if (j === 0) { applyDeal(s, q, item, d.demand); addNews(s, { outlet: 'svt', headline: `${p.abbr} och ${q.abbr} överens om ${BILL_BY_ID[item.billId].title.toLowerCase()}`, body: `Uppgörelsen ger förslaget ${s.riksdag.seats[q.id]} nya ja-röster.`, tags: ['riksdag'], partyId: p.id, importance: 2 }); toast(`${q.abbr} röstar ja.`, 'good'); } else { q.relations[p.id] = clamp((q.relations[p.id] || 0) - 3, -100, 100); toast('Ingen uppgörelse.'); }
+  const ql = s.people[q.leader]; const bill = BILL_BY_ID[item.billId];
+  const j = await choice({ title: `${ql.name} (${q.abbr}) svarar`, text: `<p>"${esc(d.demand.text)}"</p><p class="muted">Pris: ${esc(d.demand.cost)}</p>`, choices: [{ label: 'Acceptera – vi har en uppgörelse', cls: 'green' }, { label: 'Skriv ett motbud', desc: 'Formulera själv vad ni kan erbjuda i stället. Relation, tydlighet och ton avgör.', cls: 'gold' }, { label: 'Tacka nej' }] });
+  let deal = j === 0;
+  if (j === 1) {
+    const r = await textDialog({ title: `Motbud till ${ql.name}`, intro: `${esc(ql.first)} kräver: <i>"${esc(d.demand.text)}"</i>. Vad erbjuder ni i stället?`, placeholder: 'Vi kan tänka oss att … i utbyte mot ert stöd.', rows: 4, maxlength: 600, okLabel: 'Lägg budet' });
+    if (r) { if (llmEnabled()) toast('Claude läser…'); const an = await analyze(s, r.text, { question: d.demand.text }); const out = await negotiationCounter(s, G.rnd, q, { title: bill.title }, d.demand, r.text, an); await info(`${ql.name} svarar`, `<p>"${esc(out.reply)}"</p>`); deal = out.decision !== 'reject'; if (out.decision === 'counter') d.demand = { ...d.demand, text: r.text.slice(0, 160), cost: 'ert eget bud', counter: true }; }
+  }
+  if (deal) { applyDeal(s, q, item, d.demand); addNews(s, { outlet: 'svt', headline: `${p.abbr} och ${q.abbr} överens om ${bill.title.toLowerCase()}`, body: `Uppgörelsen ger förslaget ${s.riksdag.seats[q.id]} nya ja-röster.${d.demand.counter ? ' Uppgörelsen bygger på ' + p.abbr + ':s eget bud.' : ''}`, tags: ['riksdag'], partyId: p.id, importance: 2 }); toast(`${q.abbr} röstar ja.`, 'good'); } else { q.relations[p.id] = clamp((q.relations[p.id] || 0) - 3, -100, 100); toast('Ingen uppgörelse.'); }
   save(); renderShell();
-}
-async function postFlow(params) {
-  const s = G.state;
-  if (s.ap < 1) return toast('Inga handlingspoäng kvar.', 'bad');
-  s.ap -= 1; s.stats.posts++;
-  const po = composePost(s, G.rnd, params);
-  save();
-  await info(po.reach > 300000 ? '🚀 Viralt!' : po.landedWrong ? '😬 Det landade fel' : 'Publicerat', `<div class="post"><div class="body">${esc(po.text)}</div><div class="stats"><span>👁 ${fmt(po.reach)} visningar</span><span>❤️ ${fmt(po.likes)}</span><span>➕ ${fmt(po.newFollowers)} följare</span><span>⚠️ risk ${po.risk}</span></div></div>${po.landedWrong ? '<p class="danger" style="margin-top:10px">Inlägget tolkades illa och kritiken växer.</p>' : ''}`);
-  renderShell();
 }
 async function budgetFlow() { await runBudget(G.state, G.rnd); save(); renderShell(); }
 async function resignFlow() {
@@ -382,14 +391,15 @@ async function noConfidenceFlow() {
 }
 
 function menuDialog() {
-  modal({ title: 'Meny', body: `<p class="help">Spelet sparas automatiskt efter varje handling och vecka. Här kan du dessutom exportera sparfilen eller gå tillbaka till startskärmen.</p>`, buttons: [{ label: 'Exportera sparfil', onClick: () => exportSave() }, { label: 'Till startskärmen', onClick: () => { save(); UI.onExit?.(); } }, { label: 'Stäng', cls: 'gold' }], stack: true });
+  modal({ title: 'Meny', body: `<p class="help">Spelet sparas automatiskt efter varje handling och vecka. Här kan du dessutom exportera sparfilen, slå på Claude-läget eller gå tillbaka till startskärmen.</p>`, buttons: [{ label: `🤖 AI-läge (Claude) – ${llmEnabled() ? 'på' : 'av'}`, onClick: () => aiSettingsDialog() }, { label: 'Exportera sparfil', onClick: () => exportSave() }, { label: 'Till startskärmen', onClick: () => { save(); UI.onExit?.(); } }, { label: 'Stäng', cls: 'gold' }], stack: true });
 }
 function helpDialog() {
   modal({ title: 'Så spelar du', wide: true, body: `
     <p><b>Varje vecka</b> har du handlingspoäng (AP). Använd dem på presskonferenser, turnéer, sociala medier, riksdagsarbete, partibygge – och tryck sedan <b>Nästa vecka</b>. Då händer allt annat: statistiken uppdateras, opinionen rör sig, medierna rapporterar, händelser och skandaler inträffar.</p>
     <p><b>Opinionen</b> styrs av hur nära din politik ligger varje väljargrupp i de frågor som är heta just nu, av partiledarens personlighet och stöd, trovärdighet, uppmärksamhet, skandaler, regeringens leverans – och kännedom. Ett nytt parti måste först bli känt.</p>
     <p><b>Riksdagen</b>: lagförslag kommer till omröstning efter tre veckor. Förhandla med andra partier för att få igenom dina egna – de ställer krav. Omröstningar sparas i partiernas röstminne och kan användas i debatter ("INVÄNDNING!").</p>
-    <p><b>Debatter</b> spelas som scener: välj argument (fakta, känsla, motangrepp, kompromiss) utifrån din ledares egenskaper. Hittar du en motsägelse mellan vad motståndaren säger och hur de röstat – invänd!</p>
+    <p><b>Du skriver själv.</b> Inlägg, debattsvar, presskonferenser, tal, förhandlingsbud och enskilda samtal skrivs i fri text. Spelet läser vad du faktiskt skrev: ton (saklig, kämpande, konfrontativ, humor, personlig, undvikande), vilka frågor du berör, om du svarar på frågan, löften med siffror (de sparas och granskas), faktapåståenden (fel siffror faktakollas) och motsägelser mot vad du sagt tidigare. Gamla uttalanden kan grävas fram år senare. Under ☰ Meny kan du lägga in en egen Anthropic-nyckel så att Claude läser dina texter och skriver motståndarnas repliker.</p>
+    <p><b>Debatter</b> spelas som scener: skriv ditt svar (eller utgå från ett förslag). Journalister ställer följdfrågor när du inte svarar, motståndare avbryter, och gör motståndaren ett faktafel kan du avslöja det – INVÄNDNING!</p>
     <p><b>Valet</b> hålls andra söndagen i september vart fjärde år. Valrörelsen börjar åtta veckor innan. Efter valet bildas regering: statsministern tolereras om färre än 175 röstar nej.</p>
     <p><b>Sverige</b> simuleras månad för månad: ekonomi, välfärd, brott, klimat, försvar, demokrati, regioner. Reformer märks med fördröjning.</p>
     <p class="muted">Spelet är svårt med avsikt. Ett nytt parti behöver flera år. Lycka till.</p>`, buttons: [{ label: 'OK', cls: 'gold' }] });

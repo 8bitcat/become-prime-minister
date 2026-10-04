@@ -19,6 +19,9 @@ import { weeklyMedia } from './media.js';
 import { updateTrust, checkPromises, setManifest } from './promises.js';
 import { IDEOLOGIES, IDEOLOGY_BY_ID } from '../data/ideologies.js';
 import { stepReforms, capitalRegen, aiGovernmentReforms, aiProgramDrift, syncAxes, programFromAxes, axesFromProgram, proposeReform, reformCost, POLICY_BY_ID, policyLabel, reformTitle } from './policy.js';
+import { digOldStatement, checkTextPromises, initMemory } from '../ai/memory.js';
+import { leakSecretDeals, utspelEffect } from './talk.js';
+import { monthlyMinisters } from './government.js';
 
 const me = (s) => s.parties[s.player.partyId];
 const leader = (s) => s.people[me(s).leader];
@@ -57,6 +60,8 @@ export function endWeek(state, rnd) {
     state.riksdag.passedRecently = Math.max(0, (state.riksdag.passedRecently || 0) - 1);
     aiPartyMonth(state, rnd);
     for (const it of monthlyParty(state, rnd)) queue(state, it);
+    leakSecretDeals(state, rnd);
+    for (const it of monthlyMinisters(state, rnd)) queue(state, it);
     for (const sc of notes) report.items.push(`📊 ${sc.text}.`);
   }
   if (newYear) { for (const per of Object.values(state.people)) per.age++; p.members = Math.round(p.members * (1 + (p.momentum || 0) * .05)); yearlyParties(state, rnd); const lead = leader(state); if (lead.age >= 68 && rnd() < .35) queue(state, { type: 'retire' }); }
@@ -77,12 +82,16 @@ export function endWeek(state, rnd) {
   p.credibility = clamp(p.credibility + (50 - p.credibility) * .02, 0, 100);
   p.risk = Math.max(0, (p.risk || 0) * .985);
   p.fundFatigue = Math.max(0, (p.fundFatigue || 0) - 1);
+  // trötthet: varje vecka återhämtar sig ledaren lite; över 75 börjar medierna skriva
+  { const l = leader(state); l.fatigue = clamp((l.fatigue || 0) - 6, 0, 100); if (l.fatigue >= 75 && !state.flags.fatigueNews) { state.flags.fatigueNews = state.week; addNews(state, { outlet: pick(rnd, ['expressen', 'aftonbladet']), headline: `Är ${l.name} utbränd? "Ser sliten ut"`, body: `Partiledaren har hållit ett rasande tempo. Partikamrater oroar sig – och motståndarna ser en öppning.`, tags: ['parti'], partyId: p.id, importance: 1, tone: -1 }); } if (l.fatigue < 40) delete state.flags.fatigueNews; }
 
   // --- händelser, skandaler, sociala medier ---
   for (const ev of rollEvents(state, rnd)) queue(state, ev.kind === 'interview' ? { type: 'interview' } : ev.kind === 'debate' ? { type: 'debate', debate: ev.debate } : { type: 'event', event: ev });
   for (const sc of rollScandals(state, rnd)) queue(state, { type: 'scandal', scandalId: sc.id });
   decayScandals(state, rnd);
   for (const po of weeklySocial(state, rnd)) queue(state, { type: 'resurfaced', postId: po.id });
+  initMemory(state);
+  if (rnd() < .035 * (1 + p.attention / 60) * (state.election.campaign ? 2.5 : 1)) { const st = digOldStatement(state, rnd); if (st) queue(state, { type: 'statement', id: st.id }); }
   weeklyFlavor(state, rnd);
   for (const it of weeklyMedia(state, rnd)) queue(state, it);
   updateTrust(state);
@@ -164,6 +173,8 @@ function electionCalendar(state, rnd, report) {
   if (!el.campaign && days <= 56 && days > 0) {
     el.campaign = true; el.debatesDone = []; el.campaignNoise = 1;
     const pc = checkPromises(state, rnd); if (pc) report.items.push(`📋 Löfteskollen: ${pc.kept} hållna, ${pc.broken} brutna${pc.inPower ? '' : ' (ni satt i opposition)'}.`);
+    const tp = checkTextPromises(state);
+    if (tp.length) { const held = tp.filter((x) => x.checked === 'hållet').length, broken = tp.filter((x) => x.checked === 'brutet').length, unclear = tp.filter((x) => x.checked === 'oklart').length; const p2 = me(state); p2.trust = clamp((p2.trust ?? 50) + held * 2 - broken * 3, 0, 100); report.items.push(`📝 Medierna granskar vad ni lovat i egna ord: ${held} hållna, ${broken} brutna, ${unclear} omöjliga att mäta.`); addNews(state, { outlet: 'svt', headline: `Granskning: så gick det med ${p2.abbr}:s löften`, body: tp.slice(0, 4).map((x) => `"${x.text.slice(0, 70)}" – ${x.checked}`).join('. ') + '.', tags: ['val', 'politik'], partyId: p2.id, importance: 2, tone: held > broken ? 1 : -1 }); }
     if (!me(state).manifest || me(state).manifest.year !== el.next.y) queue(state, { type: 'manifest' });
     addNews(state, { outlet: 'svt', headline: `Valrörelsen drar igång – ${Math.round(days / 7)} veckor kvar till valet`, body: 'Partiledarna ger sig ut på turné. Opinionsinstituten lovar mätningar varje vecka.', tags: ['val'], importance: 3 });
     report.items.push('🗳️ Valrörelsen har börjat! Du har extra kampanjhandlingar i åtta veckor.');
@@ -183,9 +194,10 @@ function electionCalendar(state, rnd, report) {
 
 // ---------- SPELARENS HANDLINGAR ----------
 export const ACTIONS = [
-  { id: 'press', name: 'Presskonferens', ic: '🎤', ap: 1, desc: 'Håll presskonferens i en fråga. Ger uppmärksamhet och sätter dagordningen. Journalister kan vilja intervjua dig.', needs: 'issue' },
-  { id: 'turne', name: 'Turné & tal', ic: '🚌', ap: 2, money: (s) => me(s).inRiksdag ? 150000 : 15000, desc: 'Res till ett län, håll tal och möt väljare. Kännedom och stöd i regionen ökar.', needs: 'region' },
-  { id: 'utspel', name: 'Politiskt utspel', ic: '📣', ap: 1, desc: 'Lansera ett konkret förslag i en fråga. Sätter frågan på dagordningen och profilerar partiet.', needs: 'issue' },
+  { id: 'press', name: 'Presskonferens', ic: '🎤', ap: 1, desc: 'Skriv ditt uttalande och svara på journalisternas frågor – i ämnet, utanför ämnet och om sådant du sagt förr. Sätter dagordningen.', needs: 'press' },
+  { id: 'turne', name: 'Turné & tal', ic: '🚌', ap: 2, money: (s) => me(s).inRiksdag ? 150000 : 15000, desc: 'Res till ett län och håll ett tal du skriver själv. Publiken reagerar mening för mening. Kännedom och stöd i regionen ökar.', needs: 'speech' },
+  { id: 'utspel', name: 'Politiskt utspel', ic: '📣', ap: 1, desc: 'Skriv ett förslag med egna ord. Konkreta siffror blir löften som följs upp; vaga formuleringar flaggas.', needs: 'utspel' },
+  { id: 'fokusgrupp', name: 'Fokusgrupp', ic: '🧪', ap: 1, money: () => 40000, desc: 'Låt rådgivaren samla väljare: hur uppfattas ni, vilken ton har ni, vad har ni aldrig sagt något om? Rådgivaren kan ha fel.', needs: 'fokus' },
   { id: 'angrepp', name: 'Angrip motståndare', ic: '⚔️', ap: 1, desc: 'Gå till angrepp mot ett annat parti i en fråga. Uppmärksamhet – men relationerna surnar och risken ökar.', needs: 'party_issue' },
   { id: 'medlem', name: 'Medlemsvärvning', ic: '👥', ap: 1, desc: 'Kampanj för nya medlemmar. Fler medlemmar = mer pengar och starkare organisation.' },
   { id: 'insamling', name: 'Insamling', ic: '💰', ap: 1, desc: 'Ring givare och samla in pengar. Beloppet beror på medlemmar, uppmärksamhet och ledarens sociala förmåga.' },
@@ -194,7 +206,7 @@ export const ACTIONS = [
   { id: 'reform', name: 'Föreslå reform', ic: '⚖️', ap: 1, desc: 'Föreslå att en lag ändras – skatter, migration, välfärd, försvar, vad som helst i politiken. Omröstning om tre veckor. Som statsminister kostar det politiskt kapital.', needs: 'reform', cond: (s) => me(s).inRiksdag && (s.riksdag.seats[me(s).id] || 0) > 0 && s.riksdag.session },
   { id: 'motion', name: 'Lägg fram lagförslag', ic: '🏛️', ap: 1, desc: 'Lägg en motion i riksdagen. Omröstning om tre veckor. Förhandla med andra partier för att få stöd.', needs: 'bill', cond: (s) => me(s).inRiksdag && (s.riksdag.seats[me(s).id] || 0) > 0 && s.riksdag.session },
   { id: 'forhandla', name: 'Förhandla om ett förslag', ic: '🤝', ap: 1, desc: 'Sök stöd från ett annat parti för ditt liggande förslag. De kommer att ställa krav.', needs: 'negotiate', cond: (s) => s.riksdag.bills.some((b) => b.status === 'pending' && b.byPlayer) },
-  { id: 'samtal', name: 'Bygg relationer', ic: '☕', ap: 1, desc: 'Ät lunch med en annan partiledare. Bättre relationer gör samarbete och regeringsbildning möjlig.', needs: 'party' },
+  { id: 'samtal', name: 'Enskilt samtal', ic: '☕', ap: 1, desc: 'Prata på tu man hand med en partiledare, en partikamrat eller en journalist off record. Det du säger stannar i rummet – oftast.', needs: 'talk' },
   { id: 'reklam', name: 'Reklamkampanj', ic: '📺', ap: 1, money: (s) => me(s).inRiksdag ? 2000000 : 200000, desc: 'Köp annonser i TV, tidningar och sociala medier. Kännedom och stöd ökar brett.', cond: (s) => s.election.campaign },
   { id: 'dorr', name: 'Dörrknackning', ic: '🚪', ap: 1, desc: 'Mobilisera medlemmarna att knacka dörr. Effekten beror på organisationens styrka.', cond: (s) => s.election.campaign },
   { id: 'kongress', name: 'Partikongress', ic: '🏟️', ap: 2, desc: 'Ändra stadgar, maktfördelning och målgrupper. Kostar sammanhållning – men formar partiet för lång tid.', needs: 'structure', cond: (s) => !s.election.campaign },
@@ -214,30 +226,33 @@ export function doAction(state, rnd, id, params = {}) {
   const bumpAw = (v) => { if (aw() < 1) state.opinion.awareness[p.id] = clamp(aw() + v, 0, 1); };
   const kar = (l.traits.karisma - 45) / 100, ret = (l.traits.retorik - 45) / 100, soc = (l.traits.social - 45) / 100;
   const att = (v) => { p.attention = clamp(p.attention + v * (1 - p.attention / 130), 0, 100); }; // avtagande
+  l.fatigue = clamp((l.fatigue || 0) + a.ap * 3 + (id === 'turne' ? 4 : 0), 0, 100);
   let text = '';
   switch (id) {
     case 'press': {
       const is = ISSUE_BY_ID[params.issue];
-      const hit = clamp(.35 + ret * .6 + (p.credibility - 50) / 200 + (state.opinion.salience[is.id] - 1) * .3, .05, .95);
+      const hit = params.quality != null ? clamp(params.quality, .05, .95) : clamp(.35 + ret * .6 + (p.credibility - 50) / 200 + (state.opinion.salience[is.id] - 1) * .3, .05, .95);
       att(4 + hit * 6); bumpAw(.01 + hit * .02);
       state.opinion.boost[is.id] = (state.opinion.boost[is.id] || 0) + .15;
-      const good = rnd() < hit;
-      addNews(state, { outlet: pick(rnd, ['svt', 'tv4', 'dn', 'ekot']), headline: good ? `${p.abbr} kräver nytag om ${is.name.toLowerCase()}` : `${p.abbr}:s presskonferens om ${is.name.toLowerCase()} – "inget nytt"`, body: good ? `${l.name} presenterade partiets linje: ${is.name.toLowerCase()} ska ${p.pos[is.id] < 0 ? is.left.toLowerCase() : is.right.toLowerCase()}. "Äntligen ett tydligt besked", säger en kommentator.` : `Journalisterna var fåtaliga och frågorna kritiska. ${l.name} svarade undvikande.`, tags: ['politik', is.id], partyId: p.id, importance: good ? 2 : 1 });
+      const good = params.good != null ? params.good : rnd() < hit;
+      if (!params.text) addNews(state, { outlet: pick(rnd, ['svt', 'tv4', 'dn', 'ekot']), headline: good ? `${p.abbr} kräver nytag om ${is.name.toLowerCase()}` : `${p.abbr}:s presskonferens om ${is.name.toLowerCase()} – "inget nytt"`, body: good ? `${l.name} presenterade partiets linje: ${is.name.toLowerCase()} ska ${p.pos[is.id] < 0 ? is.left.toLowerCase() : is.right.toLowerCase()}. "Äntligen ett tydligt besked", säger en kommentator.` : `Journalisterna var fåtaliga och frågorna kritiska. ${l.name} svarade undvikande.`, tags: ['politik', is.id], partyId: p.id, importance: good ? 2 : 1 });
       if (good) { p.credibility = clamp(p.credibility + 1.5, 0, 100); if (rnd() < .4) queue(state, { type: 'interview', issue: is.id }); }
       text = good ? 'Presskonferensen fick bra genomslag.' : 'Presskonferensen blev ingen succé.';
       break;
     }
     case 'turne': {
       const r = REGIONS.find((x) => x.id === params.region);
-      const eff = (.6 + kar) * (1 + (p.org / 100) * .5);
+      const eff = (.6 + kar) * (1 + (p.org / 100) * .5) * (params.mult ?? 1);
       bumpAw(.02 * eff); att(3);
       for (const sg of SEGMENTS) { const w = (r.seg[sg.id] || 1); const seg = state.opinion.seg[sg.id]; if (seg) seg[p.id] = Math.max(.01, (seg[p.id] || .1) + .12 * eff * w * (r.pop / 10650) * 8); }
       (state.opinion.regionBoost ||= {})[r.id] = (state.opinion.regionBoost[r.id] || 0) + 1.5 * eff;
-      addNews(state, { outlet: pick(rnd, ['svt', 'tv4', r.id === 'O' ? 'gp' : r.id === 'M' ? 'sydsvenskan' : r.id === 'BD' ? 'nsd' : 'svt']), headline: `${l.name} på turné i ${r.name}: "${pick(rnd, ['Ni är inte bortglömda', 'Hela landet ska leva', 'Vi hör er', 'Det här är Sveriges hjärta'])}"`, body: `${pick(rnd, ['Flera hundra', 'Ett femtiotal', 'Över tusen', 'Några dussin'])} personer kom för att lyssna. ${kar > .1 ? 'Stämningen var elektrisk.' : 'Mottagandet var artigt.'}`, tags: ['kampanj'], partyId: p.id, importance: 1 });
-      text = `Turnén i ${r.name} genomförd.`;
+      if (!params.text) addNews(state, { outlet: pick(rnd, ['svt', 'tv4', r.id === 'O' ? 'gp' : r.id === 'M' ? 'sydsvenskan' : r.id === 'BD' ? 'nsd' : 'svt']), headline: `${l.name} på turné i ${r.name}: "${pick(rnd, ['Ni är inte bortglömda', 'Hela landet ska leva', 'Vi hör er', 'Det här är Sveriges hjärta'])}"`, body: `${pick(rnd, ['Flera hundra', 'Ett femtiotal', 'Över tusen', 'Några dussin'])} personer kom för att lyssna. ${kar > .1 ? 'Stämningen var elektrisk.' : 'Mottagandet var artigt.'}`, tags: ['kampanj'], partyId: p.id, importance: 1 });
+      text = `Turnén i ${r.name} genomförd${params.mult != null ? (params.mult > 1.2 ? ' – talet lyfte' : params.mult < .8 ? ' – talet föll platt' : '') : ''}.`;
       break;
     }
+    case 'fokusgrupp': { text = 'Fokusgruppen är genomförd.'; break; }
     case 'utspel': {
+      if (params.text && params.analysis) { const r = utspelEffect(state, rnd, params.text, params.analysis, params.issue || null); att(6 * (.5 + r.clear)); bumpAw(.02); text = r.vague ? `Utspelet om ${ISSUE_BY_ID[r.issue].name.toLowerCase()} uppfattades som vagt.` : `Utspelet om ${ISSUE_BY_ID[r.issue].name.toLowerCase()} gjordes – frågan är nu hetare.${r.contradictions.length ? ' Medierna noterade en motsägelse.' : ''}`; break; }
       const is = ISSUE_BY_ID[params.issue];
       state.opinion.boost[is.id] = (state.opinion.boost[is.id] || 0) + .3;
       att(6); bumpAw(.02); p.profile[is.id] = Math.min(2.5, (p.profile[is.id] || 1) + .15);
@@ -271,7 +286,7 @@ export function doAction(state, rnd, id, params = {}) {
       break;
     }
     case 'motion': { const bill = BILL_BY_ID[params.bill]; const item = proposeBill(state, rnd, p.id, bill.id, { byPlayer: true }); addNews(state, { outlet: pick(rnd, ['svt', 'dn', 'ekot']), headline: `${p.abbr} lägger fram: ${bill.title}`, body: `${bill.desc} Omröstning i riksdagen om tre veckor. ${activeParties(state).filter((q) => !q.isPlayer && q.inRiksdag && stance(q, bill) > .3).map((q) => q.abbr).join(', ') || 'Inget parti'} väntas ge stöd.`, tags: ['riksdag', bill.area], partyId: p.id, importance: 2 }); att(3); text = `Motionen "${bill.title}" är inlämnad (omröstning vecka ${item.voteWeek}).`; break; }
-    case 'samtal': { const q = state.parties[params.party]; const d = Math.round(6 + soc * 10 + (rnd() * 6 - 2)); q.relations[p.id] = clamp((q.relations[p.id] || 0) + d, -100, 100); p.relations[q.id] = clamp((p.relations[q.id] || 0) + d, -100, 100); text = `Lunchen med ${state.people[q.leader].name} (${q.abbr}) gick ${d > 8 ? 'utmärkt' : d > 3 ? 'bra' : 'sådär'} (relation ${q.relations[p.id]}).`; break; }
+    case 'samtal': { if (params.note != null) { text = params.note; break; } const q = state.parties[params.party]; const d = Math.round(6 + soc * 10 + (rnd() * 6 - 2)); q.relations[p.id] = clamp((q.relations[p.id] || 0) + d, -100, 100); p.relations[q.id] = clamp((p.relations[q.id] || 0) + d, -100, 100); text = `Lunchen med ${state.people[q.leader].name} (${q.abbr}) gick ${d > 8 ? 'utmärkt' : d > 3 ? 'bra' : 'sådär'} (relation ${q.relations[p.id]}).`; break; }
     case 'reklam': { const eff = p.inRiksdag ? 1 : 1.6; bumpAw(.04 * eff); att(6); for (const sg of SEGMENTS) { const seg = state.opinion.seg[sg.id]; if (seg) seg[p.id] = Math.max(.01, (seg[p.id] || .1) * (1 + .03 * eff * sg.media)); } text = 'Reklamkampanjen rullar i hela landet.'; break; }
     case 'dorr': { const eff = (p.org / 100) * (p.members / 20000 + .3); for (const sg of SEGMENTS) { const seg = state.opinion.seg[sg.id]; if (seg) seg[p.id] = Math.max(.01, (seg[p.id] || .1) + .25 * eff); } bumpAw(.02 * eff); text = `Dörrknackningen nådde ${Math.round(p.members * 8 * eff)} hushåll.`; break; }
     case 'kongress': {
@@ -317,7 +332,7 @@ export function doAction(state, rnd, id, params = {}) {
       text = `${next.name} är ny partiledare.`;
       break;
     }
-    case 'vila': { p.unity = clamp(p.unity + 2, 0, 100); state.ap = 0; text = 'Veckan avslutas i lugn och ro.'; break; }
+    case 'vila': { p.unity = clamp(p.unity + 2, 0, 100); state.ap = 0; l.fatigue = clamp((l.fatigue || 0) - 25, 0, 100); text = 'Veckan avslutas i lugn och ro. Du hämtar kraft.'; break; }
   }
   (state.log[0] ||= { week: state.week, date: { ...state.date }, items: [] }).items.push(`${a.ic} ${a.name}: ${text}`);
   return { ok: true, text };

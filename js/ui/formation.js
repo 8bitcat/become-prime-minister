@@ -6,6 +6,11 @@ import { addNews } from '../sim/news.js';
 import { modal, choice, info } from './modal.js';
 import { seatBar } from './charts.js';
 import { clamp } from '../core/util.js';
+import { textDialog } from './freetext.js';
+import { analyze } from '../ai/generate.js';
+import { formationOffer, clearOffers } from '../sim/talk.js';
+import { llmEnabled } from '../ai/llm.js';
+import { toast } from './modal.js';
 
 export async function runFormation(state, rnd, item) {
   const me = state.parties[state.player.partyId];
@@ -79,8 +84,8 @@ function playerFormation(state, rnd, round) {
         const w = willingness(state, q, me); const d = ideologicalDistance(q, me);
         const accCo = w > 45 && d < 32, accSu = w > 25;
         const row = h('div', { class: 'item' });
-        row.innerHTML = `<div class="top"><b><span class="pos-dot" style="background:${q.color}"></span>${esc(q.name)} · ${seats[q.id]} mandat</b><span class="tag ${w > 45 ? 'green' : w > 25 ? 'gold' : 'red'}">${w > 45 ? 'vill samarbeta' : w > 25 ? 'kan tänka sig stöd' : w > 0 ? 'avvaktande' : 'avvisar'}</span></div><small class="muted">${esc(state.people[q.leader].name)} · avstånd ${fmt(d, 0)} · relation ${q.relations?.[me.id] || 0}${(q.cordon || []).includes(me.id) ? ' · <b class="danger">vägrar samarbeta med er</b>' : ''}</small><div class="chips" style="margin-top:6px"><span class="chip ${sel[q.id] === 'coalition' ? 'on' : ''} ${accCo ? '' : 'static'}" data-k="coalition" style="${accCo ? '' : 'opacity:.4'}">I regeringen</span><span class="chip ${sel[q.id] === 'support' ? 'on' : ''}" data-k="support" style="${accSu ? '' : 'opacity:.4'}">Stödparti</span><span class="chip ${!sel[q.id] ? 'on' : ''}" data-k="none">Utanför</span></div>`;
-        row.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => { const k = c.dataset.k; if (k === 'coalition' && !accCo) return; if (k === 'support' && !accSu) return; sel[q.id] = k === 'none' ? null : k; draw(); }));
+        row.innerHTML = `<div class="top"><b><span class="pos-dot" style="background:${q.color}"></span>${esc(q.name)} · ${seats[q.id]} mandat</b><span class="tag ${w > 45 ? 'green' : w > 25 ? 'gold' : 'red'}">${w > 45 ? 'vill samarbeta' : w > 25 ? 'kan tänka sig stöd' : w > 0 ? 'avvaktande' : 'avvisar'}</span></div><small class="muted">${esc(state.people[q.leader].name)} · avstånd ${fmt(d, 0)} · relation ${q.relations?.[me.id] || 0}${q.offerBonus ? ` · ert erbjudande: <b class="${q.offerBonus > 0 ? 'ok' : 'danger'}">${q.offerBonus > 0 ? '+' : ''}${q.offerBonus}</b>` : ''}${(q.cordon || []).includes(me.id) ? ' · <b class="danger">vägrar samarbeta med er</b>' : ''}</small><div class="chips" style="margin-top:6px"><span class="chip ${sel[q.id] === 'coalition' ? 'on' : ''} ${accCo ? '' : 'static'}" data-k="coalition" style="${accCo ? '' : 'opacity:.4'}">I regeringen</span><span class="chip ${sel[q.id] === 'support' ? 'on' : ''}" data-k="support" style="${accSu ? '' : 'opacity:.4'}">Stödparti</span><span class="chip ${!sel[q.id] ? 'on' : ''}" data-k="none">Utanför</span><span class="chip" data-k="offer" style="margin-left:auto">✉️ ${q.offerBonus ? 'Nytt erbjudande' : 'Skriv ett erbjudande'}</span></div>`;
+        row.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', async () => { const k = c.dataset.k; if (k === 'offer') { const r = await textDialog({ title: `Erbjudande till ${state.people[q.leader].name} (${q.abbr})`, intro: `Vad erbjuder ni ${esc(q.abbr)} för att gå med? Ministerposter (nämn dem), politik de vill ha, löften. Det här stannar mellan er – om det inte läcker.`, placeholder: 'Vi erbjuder er finansministerposten och …', rows: 4, maxlength: 600, okLabel: 'Skicka erbjudandet' }); if (!r) return; if (llmEnabled()) toast('Claude läser…'); const an = await analyze(state, r.text, {}); const out = formationOffer(state, q, r.text, an); toast(out.bonus > 8 ? `${q.abbr} lyssnar intresserat (+${out.bonus}).` : out.bonus > 0 ? `${q.abbr} noterar erbjudandet (+${out.bonus}).` : `${q.abbr} är inte imponerade (${out.bonus}).`, out.bonus > 0 ? 'good' : 'bad'); draw(); return; } if (k === 'coalition' && !accCo) return; if (k === 'support' && !accSu) return; sel[q.id] = k === 'none' ? null : k; draw(); }));
         list.append(row);
       }
       const co = Object.keys(sel).filter((id) => sel[id] === 'coalition'), su = Object.keys(sel).filter((id) => sel[id] === 'support');
@@ -95,7 +100,7 @@ function playerFormation(state, rnd, round) {
     btnVote.addEventListener('click', async () => {
       const co = Object.keys(sel).filter((id) => sel[id] === 'coalition'), su = Object.keys(sel).filter((id) => sel[id] === 'support');
       const tv = toleranceVote(state, me, co, su, round);
-      m.close();
+      m.close(); clearOffers(state);
       if (tv.passed) {
         const gov = buildGovernment(state, rnd, me.id, co, su, tv);
         state.government = gov;
@@ -110,7 +115,7 @@ function playerFormation(state, rnd, round) {
         resolve(false);
       }
     });
-    const m = modal({ title: `Bilda regering – ${esc(me.name)}`, body, wide: true, closable: false, buttons: [{ label: 'Avbryt – låt andra försöka', onClick: () => resolve(false) }] });
+    const m = modal({ title: `Bilda regering – ${esc(me.name)}`, body, wide: true, closable: false, buttons: [{ label: 'Avbryt – låt andra försöka', onClick: () => { clearOffers(state); resolve(false); } }] });
     m.el.querySelector('.mf').prepend(btnVote);
     draw();
   });

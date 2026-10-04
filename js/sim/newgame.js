@@ -17,6 +17,7 @@ import { defaultStructure, initFactions } from './party.js';
 import { initJournalists, initInfluencers } from './media.js';
 import { defaultPolicy } from '../data/policies.js';
 import { programFromAxes, syncAxes, coalitionAgreement } from './policy.js';
+import { recordStatement } from '../ai/memory.js';
 
 const START_DATE = { y: 2027, m: 1, d: 4 }; // måndag
 const START_IDEOLOGY = { s: 'socialdemokrati', sd: 'nationalkonservatism', m: 'liberalkonservatism', v: 'dem_socialism', c: 'gron_liberalism', kd: 'kristdemokrati', mp: 'gron', l: 'liberalism' };
@@ -99,7 +100,10 @@ export function newGame({ seed = Date.now() % 2147483647, mode, takeoverId, part
     history: { leaders: [], timeline: [{ date: { ...START_DATE }, week: 0, kind: 'start', text: mode === 'new' ? `${playerParty.name} bildas av ${leader.name}.` : `${leader.name} tar över som partiledare för ${playerParty.name}.` }], bios: [] },
     ap: 4, apMax: 4, queue: [], log: [], flags: {}, stats: { weeks: 0, debates: 0, debatesWon: 0, billsPassed: 0, posts: 0 },
     policy: defaultPolicy(), reforms: [],
+    memory: { statements: [], persona: { saklig: 0, kampande: 0, aggressiv: 0, humor: 0, kansla: 0, undvikande: 0, n: 0 }, promises: [], corrections: 0 }, secretDeals: [],
   };
+  if (partyDef?.manifesto) { playerParty.manifesto = partyDef.manifesto; playerParty.ideologyName = partyDef.ideologyName || null; }
+  if (leaderDef.sprite) leader.sprite = leaderDef.sprite;
   for (const p of Object.values(parties)) { p.program = programFromAxes(p.pos); if (!p.isPlayer || mode === 'takeover') syncAxes(p); else { /* nytt parti: programmet härleds ur den valda ideologin */ syncAxes(p); } }
   for (const p of Object.values(parties)) { state.opinion.awareness[p.id] = p.inRiksdag ? 1 : 0.004; state.history.leaders.push({ personId: p.leader, partyId: p.id, name: people[p.leader].name, from: people[p.leader].since || { ...START_DATE }, to: null, reason: null }); }
   for (const j of Object.values(state.journalists)) { people[j.person.id] = j.person; delete j.person; j.personId = Object.keys(people).find((id) => people[id].name === j.name); }
@@ -115,6 +119,8 @@ export function newGame({ seed = Date.now() % 2147483647, mode, takeoverId, part
   addNews(state, { outlet: 'svt', headline: 'Nytt politiskt år – så ser läget ut', body: pmP ? `Regeringen ${gov.parties.map((id) => parties[id].abbr).join('+')} under statsminister ${people[gov.pm].name} (${pmP.abbr}) går in i sitt första hela år. ${gov.support.length ? 'Stödpartier: ' + gov.support.map((id) => parties[id].abbr).join(', ') + '.' : ''} Nästa val hålls i september 2030.` : 'Sverige saknar regering och går in i det nya året med en expeditionsministär.', tags: ['politik'], importance: 2 });
   if (mode === 'new') addNews(state, { outlet: pick(rnd, ['expressen', 'aftonbladet']), headline: `Nytt parti bildat: ${playerParty.name}`, body: `${leader.name}, ${leader.age}, ${leader.bg.yrke.toLowerCase()} från ${leader.bg.hemstad}, lanserar ${playerParty.name} (${playerParty.abbr}) – ${IDEOLOGY_BY_ID[playerParty.ideology.primary]?.name.toLowerCase() || 'ett nytt parti'} – med parollen "${playerParty.slogan}". ${playerParty.ext >= 3 ? 'Samtliga riksdagspartier tar avstånd.' : 'Få tror att partiet kommer att märkas i opinionen.'}`, tags: ['parti'], partyId: playerParty.id, importance: playerParty.ext >= 2 ? 2 : 1 });
   else addNews(state, { outlet: 'svt', headline: `${leader.name} ny partiledare för ${playerParty.name}`, body: `Efter en snabb process valdes ${leader.name}, ${leader.age}, till ny partiledare. "Jag är ödmjuk inför uppdraget", säger ${leader.first}. ${state.government.pm === leader.id ? 'Som ledare för det största regeringspartiet blir ' + leader.first + ' också ny statsminister.' : ''}`, tags: ['parti'], partyId: playerParty.id, importance: 3 });
+  // programförklaringen i egna ord: löften och ståndpunkter registreras i det politiska minnet
+  if (playerParty.manifesto) recordStatement(state, playerParty.manifesto, 'program', { audience: 'public' });
   state.rngState = rnd.state();
   return { state, rnd };
 }

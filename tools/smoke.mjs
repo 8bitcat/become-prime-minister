@@ -52,7 +52,7 @@ await page.click('.btn.gold.big'); await sleep(250); // → målgrupper
 await page.locator('#segs .opt').nth(1).click(); await page.locator('#segs .opt').nth(10).click();
 await shot('03e-parti-malgrupper');
 await page.click('.btn.gold.big'); await sleep(400); // → ledaren
-ok(await page.locator('#portrait svg').count() === 1, 'ledarskaparen med porträtt visas');
+ok(await page.locator('#portrait svg, #portrait img').count() === 1, 'ledarskaparen med porträtt visas');
 await page.fill('#first', 'Elin'); await page.fill('#last', 'Westerberg');
 await page.selectOption('#profession', 'sjukskoterska'); await sleep(150);
 await shot('04a-ledaren-person');
@@ -78,16 +78,24 @@ ok(await page.evaluate(() => { const l = window.BPM.G.state.people.player; retur
 ok(await page.evaluate(() => !!localStorage.getItem('bpm_save_1')), 'sparades automatiskt på plats 1');
 await shot('06-oversikt');
 
-// handling: presskonferens
-await page.locator('.action', { hasText: 'Presskonferens' }).click(); await sleep(200);
-await page.locator('.choice .btn').first().click(); await sleep(300);
+// handling: presskonferens (fritext + journalisternas frågor)
+await page.locator('.action', { hasText: 'Presskonferens' }).click(); await sleep(300);
+await page.fill('.modal #ft', 'Vi föreslår 10 000 fler lärare till 2030, finansierat genom slopade ränteavdrag. Skolan är vår viktigaste fråga.'); await sleep(350);
+await shot('06b-press');
+await page.locator('.modal .mf .btn.gold').click(); await sleep(500);
+for (let k = 0; k < 8; k++) { const ta = page.locator('.modal #ft'); if (await ta.count()) { await ta.fill('Det finansieras genom slopat ränteavdrag, 12 miljarder per år. Vi står för det.'); if (k === 0) await shot('06c-press-fraga'); await page.locator('.modal .mf .btn.gold').click(); await sleep(400); continue; } const m = page.locator('.modal'); if (!(await m.count())) break; await shot('06d-press-resultat'); await m.locator('.mf .btn.gold').first().click(); await sleep(300); }
 ok(await page.evaluate(() => window.BPM.G.state.ap) === 3, 'presskonferensen kostade 1 AP');
-// sociala medier
+ok(await page.evaluate(() => window.BPM.G.state.memory.statements.length) >= 2, 'uttalandena hamnade i det politiska minnet');
+// sociala medier: fritt inlägg med kommentarsfält
 await page.locator('.sidenav button', { hasText: 'Sociala medier' }).click(); await sleep(400);
+await page.fill('#postText', 'Nu räcker det. Vi bygger 50 000 nya bostäder per år – på riktigt. Arbetslösheten är 25 procent och regeringen gör ingenting. #bostad'); await sleep(400);
 await shot('07-some');
-await page.click('#send'); await sleep(400);
+await page.click('#send'); await sleep(900);
 ok(await page.evaluate(() => window.BPM.G.state.social.posts.length) === 1, 'inlägget publicerades');
-await page.locator('.modal .btn.gold').click(); await sleep(200);
+ok(await page.evaluate(() => window.BPM.G.state.social.posts[0].comments.length) >= 3, 'kommentarsfältet fylldes');
+ok(await page.evaluate(() => window.BPM.G.state.news.some((n) => n.tags.includes('faktakoll'))), 'felaktig siffra faktakollades');
+await shot('07c-kommentarer');
+await page.locator('.modal .mf .btn.gold').click(); await sleep(200);
 // sidor
 for (const [name, file] of [['Politiken', '07b-politiken'], ['Partiet', '08-partiet'], ['Sverige', '09-sverige'], ['Riksdagen', '10-riksdagen'], ['Opinion', '11-opinion'], ['Nyheter', '12-nyheter'], ['Regeringen', '13-regeringen'], ['Valet', '14-valet'], ['Världen', '15-varlden'], ['Historik', '16-historik']]) {
   await page.locator('.sidenav button', { hasText: name }).first().click(); await sleep(350);
@@ -141,8 +149,10 @@ await sleep(1500);
 ok(await page.locator('.aa').count() === 1, 'debattscenen öppnas');
 await page.locator('.aa .textbox').click(); await sleep(1200); await page.locator('.aa .textbox').click(); await sleep(1500);
 await shot('20-debattscen');
-const choices = page.locator('.aa .choices .btn');
-if (await choices.count()) { await shot('21-debatt-val'); await choices.first().click(); await sleep(1800); await shot('22-debatt-svar'); }
+for (let k = 0; k < 12 && !(await page.locator('.aa #reply').count()); k++) { await page.locator('.aa .textbox').click().catch(() => {}); await sleep(500); }
+const ta = page.locator('.aa #reply');
+if (await ta.count()) { await ta.fill('Det stämmer inte. Vi föreslår 5 miljarder till polisen och 2 000 nya poliser till 2030 – fullt finansierat.'); await sleep(400); await shot('21-debatt-val'); await page.click('.aa #send'); await sleep(2200); await shot('22-debatt-svar'); }
+ok(await page.evaluate(() => window.BPM.G.state.memory.statements.some((s) => s.kind === 'debate')), 'debattsvaret sparades i minnet');
 await page.click('.aa #skip'); await sleep(300);
 for (let j = 0; j < 30; j++) { await sleep(200); const c = page.locator('.aa .choices .btn'); if (await c.count()) { const n = await c.count(); await c.nth(n - 1).click(); } const okb = page.locator('.aa #ok'); if (await okb.count()) { await shot('23-debatt-resultat'); await okb.click(); break; } await page.locator('.aa .textbox').click().catch(() => {}); }
 ok(await page.locator('.aa').count() === 0, 'debatten avslutades');

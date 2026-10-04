@@ -7,6 +7,23 @@ git-tagg (`v0.1.0` osv.).
 
 <!-- släpp: tools/release.mjs lägger nya versioner direkt under denna rad -->
 
+## [0.4.0] – 2026-10-04 – Du skriver dina egna svar
+- Du väljer inte svar – du skriver dem själv. Inlägg, debattsvar, presskonferenser, tal, utspel, förhandlingsbud, erbjudanden i regeringsbildningen och enskilda samtal skrivs i fri text. Spelet läser vad du faktiskt skrev: ton (saklig, kämpande, konfrontativ, humor, personlig, undvikande), vilka sakfrågor du berör och åt vilket håll, om du svarar på frågan, löften med siffror, faktapåståenden mot den riktiga statistiken, angrepp på partier, vaghet och risk. Analysen är inbyggd och fungerar utan nätverk.
+- Valfritt Claude-läge (☰ Meny → AI-läge): med en egen Anthropic-nyckel analyserar Claude dina texter och skriver journalisternas, motståndarnas, väljarnas och partiledarnas repliker. Nyckeln sparas bara i webbläsaren, anropen går direkt från din dator och du betalar själv.
+- Politiskt minne: allt du skriver sparas med analys. Motsägelser mot partiprogrammet och mot vad du sagt förr upptäcks och används av journalister och motståndare. Gamla riskabla uttalanden grävs fram år senare – och du skriver själv hur du svarar (stå fast, ta tillbaka, byta fot, ingen kommentar). Konkreta löften med siffror sparas och granskas av medierna inför valet. "Allt du sagt" och "Löften i egna ord" på Historik-sidan.
+- Sociala medier: skriv inlägget själv. Ett levande kommentarsfält med väljare (personas), motståndare, journalister och influerare som svarar på det du skrev. Svara i tråden (och riskera att bråka med väljare), radera inlägg (skärmdumpar kan spridas, journalisterna minns) eller rätta en felaktig siffra offentligt. Faktakoll när en siffra är fel. Virala memes.
+- Debatter: skriv ditt svar med egna ord (eller utgå från ett förslag), rådgivaren bedömer texten medan du skriver – och kan ha fel. Journalister ställer följdfrågor när du inte svarar, nämner en fel siffra eller lovar något nytt. Motståndare avbryter dig med motfrågor. AI-politiker gör ibland faktafel som du kan avslöja med INVÄNDNING! Motståndarens replik skrivs utifrån vad du faktiskt sa.
+- Presskonferens: skriv ditt uttalande, svara sedan på journalisternas frågor – i ämnet, utanför ämnet (skandalen, regeringskrisen, det heta ämnet) och om något du sagt förr. "Ingen kommentar" kostar. Rubriken skrivs av det du sa.
+- Tal på turnén: skriv talet, publiken reagerar mening för mening (jubel, applåder, tystnad, burop), att nämna länet hjälper, floskler och fel siffror sänker.
+- Utspel i fri text: löften med siffror registreras, vaga utspel flaggas av medierna.
+- Förhandlingar: skriv ett motbud när ett parti ställer krav. Regeringsbildningen: skriv erbjudanden till varje parti (ministerposter, politik, löften) som påverkar deras vilja – hemliga uppgörelser som kan läcka med förtroendetapp.
+- Enskilda samtal med partiledare, partikamrater (lojalitet, falanger) och journalister off record. Det du säger kan läcka.
+- Fokusgrupp: rådgivaren samlar väljare – hur ni uppfattas, vilken ton ni har, vad ni aldrig sagt något om.
+- Programförklaring och egen ideologi i egna ord när partiet skapas; löftena i den följs upp.
+- Ministrar har egen vilja: protesterar offentligt mot reformer som går emot deras partis linje och kan avgå. Riksdagsledamöter bryter partilinjen när sammanhållningen är låg och linjen svag. Partiledaren blir trött av tempot – vila eller riskera "utbränd?"-rubriker.
+- Figurerna: 40 tecknade karaktärer (20 kvinnor, 20 män, olika åldrar, hudtoner, frisyrer, kläder) genererade som karaktärsark i sex poser med Z-Image Turbo i ComfyUI och skivade till sprites med genomskinlig bakgrund. Alla personer i spelet matchas mot närmaste look; i ledarskaparen väljer du ur galleriet eller låter spelet matcha ditt utseende. SVG-dockan finns kvar som reserv.
+- Nytt test tools/text-test.mjs (53 kontroller av fritextlagret). Gamla sparningar uppgraderas (sparformat 4).
+
 ## [0.3.0] – 2026-10-04 – Politiken bygger du själv
 - Politiken är nu ett verktygssystem: 132 områden i 14 domäner (migration, skatter, ekonomi & ägande, arbetsmarknad, vård, socialförsäkringar, skola & forskning, brott & straff, fri- och rättigheter, statsskick, försvar, utrikes & EU, energi & klimat, infrastruktur & samhälle). Varje område är ett reglage eller en lag med gällande rätt i Sverige, ert partiprogram, effekter på simuleringen, kostnad och genomförandetid.
 - Ideologin härleds ur politiken: partiets tolv väljaraxlar och en niodimensionell kompass (ekonomi, makt, omvärld, kultur, styrning, säkerhet, religion, välfärd, miljö) räknas ut ur programmet. Spelet berättar vilken ideologi din faktiska politik liknar – och partiprogrammet skrivs automatiskt.

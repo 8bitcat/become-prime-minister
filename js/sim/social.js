@@ -114,6 +114,76 @@ export function composePost(state, rnd, { platform, kind, issue, tone, format, t
   return post;
 }
 
+// ---- fritext: spelaren skriver inlägget själv, analysen avgör hur världen reagerar ----
+const TONE_MULT = { saklig: { reach: .8, cred: .45, risk: .15 }, kampande: { reach: 1.1, cred: .15, risk: .4 }, humor: { reach: 1.5, cred: -.1, risk: 1.0 }, aggressiv: { reach: 1.9, cred: -.35, risk: 2.2 }, kansla: { reach: 1.0, cred: .15, risk: .5 }, undvikande: { reach: .55, cred: -.1, risk: .3 } };
+export function composeFreePost(state, rnd, { platform, format, text, analysis: a }) {
+  const me = state.parties[state.player.partyId];
+  const leader = state.people[me.leader];
+  const pl = PLATFORMS.find((p) => p.id === platform) || PLATFORMS[0]; const fm = FORMATS.find((f) => f.id === format) || FORMATS[0];
+  const tn = TONE_MULT[a.dominant] || TONE_MULT.saklig;
+  const issues = Object.keys(a.issues || {});
+  const sal = issues.length ? Math.max(...issues.map((id) => state.opinion.salience[id] || 1)) : .9;
+  const acct = (state.social.followers[leader.id] ||= Object.fromEntries(PLATFORMS.map((p) => [p.id, 300])));
+  const fol = acct[platform] || 10;
+  const charisma = (leader.traits.karisma - 45) / 100, retorik = (leader.traits.retorik - 45) / 100;
+  const viralRoll = Math.exp(gauss(rnd, 0, .9));
+  const len = text.length;
+  const lenMult = len < 30 ? .75 : len > 700 ? .8 : 1;
+  const hooks = (/[!?]/.test(text) ? .05 : 0) + (/#\w/.test(text) ? .05 : 0) + (/[\u{1F300}-\u{1FAFF}]/u.test(text) ? .05 : 0);
+  const reach = Math.round((fol * 1.4 + 400) * pl.viral * tn.reach * fm.reach * lenMult * (1 + hooks) * (1 + (sal - 1) * .3) * (1 + a.clarity * .25) * (1 + charisma * .8 + retorik * .3) * viralRoll * ((a.attacks || []).length ? 1.2 : 1));
+  const engagement = clamp(.03 + charisma * .03 + (a.dominant === 'aggressiv' ? .03 : 0) + (format === 'video' || format === 'meme' ? .02 : 0) + a.clarity * .01, .01, .2);
+  const likes = Math.round(reach * engagement);
+  const newFollowers = Math.round(reach * .004 * (1 + charisma) * (a.vague ? .5 : 1));
+  acct[platform] += newFollowers;
+  const aw = state.opinion.awareness[me.id] ?? 1;
+  if (aw < 1) state.opinion.awareness[me.id] = clamp(aw + reach / 3.5e6, 0, 1);
+  me.attention = clamp(me.attention + reach / 40000, 0, 100);
+  const wrongClaims = (a.claims || []).filter((c) => c.ok === false).length, okClaims = (a.claims || []).filter((c) => c.ok === true).length;
+  me.credibility = clamp(me.credibility + tn.cred * .3 + okClaims * .4 - wrongClaims * 1.2, 0, 100);
+  const landedWrong = rnd() < clamp((a.risky / 100) * .35 * (1 - leader.traits.retorik / 150) + wrongClaims * .25 + (a.vague ? .04 : 0), 0, .9);
+  let swing = (reach / 400000) * (landedWrong ? -1.2 : 1) * ((a.attacks || []).length ? .8 : 1);
+  swing = clamp(swing, -.6, .6);
+  for (const sg of SEGMENTS) {
+    const f = pl.seg[sg.id] || 1;
+    const seg = state.opinion.seg[sg.id]; if (!seg) continue;
+    let fit = .6, n = 0;
+    for (const id in a.stance || {}) { const ideal = sg.ideal[id] || 0; fit += (Math.sign(ideal) === Math.sign(a.stance[id]) ? 1 : -1) * Math.min(1, Math.abs(ideal) / 60); n++; }
+    if (n) fit = .5 + fit / (n + 1) * .5;
+    seg[me.id] = Math.max(.01, (seg[me.id] || .1) + swing * f * (fit * 2 - .8));
+  }
+  for (const id of a.attacks || []) { const tgt = state.parties[id]; if (!tgt) continue; tgt.relations ||= {}; tgt.relations[me.id] = clamp((tgt.relations[me.id] || 0) - (a.dominant === 'aggressiv' ? 12 : 5), -100, 100); if (reach > 60000) tgt.attention = clamp(tgt.attention + 2, 0, 100); }
+  const risk = Math.round(clamp(tn.risk * pl.scandal * 10 + (a.risky / 100) * 30 + (landedWrong ? 20 : 0) + ((issues.includes('migration') || issues.includes('varderingar')) && a.dominant !== 'saklig' ? 8 : 0) + wrongClaims * 8, 0, 100));
+  const post = { id: 'po' + state.week + '_' + Math.floor(rnd() * 1e5), week: state.week, date: { ...state.date }, platform, kind: (a.attacks || []).length ? 'attack' : 'issue', issue: issues[0] || null, tone: a.dominant, format, target: (a.attacks || [])[0] || null, text, reach, likes, newFollowers, risk, resurfaced: false, landedWrong, free: true, dominant: a.dominant, issues, comments: [], deleted: false, wrongClaims, promises: (a.promises || []).length };
+  state.social.posts.unshift(post);
+  if (state.social.posts.length > 200) state.social.posts.pop();
+  if (reach > 400000) addNews(state, { outlet: pick(rnd, ['aftonbladet', 'expressen', 'tv4']), headline: `${leader.name}s ${format === 'meme' ? 'meme' : fm.name.toLowerCase()} sprids som en löpeld – ${fmt(reach)} visningar`, body: `"${text.slice(0, 90)}…" Inlägget på ${pl.name} delas av både anhängare och kritiker.${a.dominant === 'humor' ? ' Memen har redan fått egna varianter.' : ''}`, tags: ['some'], partyId: me.id, importance: 2 });
+  if (landedWrong) addNews(state, { outlet: pick(rnd, ['aftonbladet', 'expressen']), headline: `Kritikstorm mot ${leader.name} efter inlägg på ${pl.name}`, body: `"${text.slice(0, 80)}…" – inlägget beskrivs som ${a.dominant === 'aggressiv' ? 'hatiskt' : a.dominant === 'humor' ? 'omdömeslöst' : wrongClaims ? 'faktamässigt fel' : 'tondövt'}. ${me.abbr} vill inte kommentera.`, tags: ['some', 'skandal'], partyId: me.id, importance: 2, tone: -1 });
+  return post;
+}
+// Radera: inlägget försvinner ur flödet – men inte ur minnet. Skärmdumpar kan spridas.
+export function deletePost(state, rnd, post) {
+  const me = state.parties[state.player.partyId]; const leader = state.people[me.leader];
+  post.deleted = true;
+  const screenshot = post.reach > 15000 && rnd() < .3 + post.risk / 150 + me.attention / 300;
+  if (screenshot) {
+    post.screenshot = true; me.risk = (me.risk || 0) + 4; me.trust = clamp((me.trust ?? 50) - 2, 0, 100);
+    addNews(state, { outlet: pick(rnd, ['expressen', 'aftonbladet', 'flashback']), headline: `${leader.name} raderade inlägget – skärmdumparna sprids`, body: `"${post.text.slice(0, 100)}…" Inlägget togs bort efter ${pick(rnd, ['några timmar', 'en dag', 'tre dagar'])}, men internet glömmer inte. ${me.abbr}: "Formuleringen blev olycklig."`, tags: ['some'], partyId: me.id, importance: 2, tone: -1 });
+  } else post.risk = Math.round(post.risk * .3);
+  const st = (state.memory?.statements || []).find((s) => s.kind === 'post' && s.text === post.text.slice(0, 600)); if (st) st.deleted = true;
+  return screenshot;
+}
+// Svara i det egna kommentarsfältet
+export function replyToComment(state, rnd, post, comment, text, a) {
+  const me = state.parties[state.player.partyId]; const leader = state.people[me.leader];
+  post.comments.push({ who: leader.name, text, mine: true, to: comment.who, likes: Math.round(post.reach / 900 * (a.dominant === 'humor' ? 2 : 1)) });
+  let note;
+  if (a.dominant === 'aggressiv') { me.risk = (me.risk || 0) + 5; post.risk += 10; note = 'Du bråkar med en väljare i kommentarsfältet. Skärmdumpen är redan tagen.'; if (rnd() < .4) addNews(state, { outlet: 'flashback', headline: `${leader.name} i gräl med väljare på ${PLATFORMS.find((x) => x.id === post.platform)?.name}: "${text.slice(0, 50)}…"`, body: 'Kommentarstråden sprids med hånfulla kommentarer.', tags: ['some'], partyId: me.id, importance: 1, tone: -1 }); }
+  else if (a.dominant === 'humor') { note = 'Svaret får fler likes än inlägget.'; me.attention = clamp(me.attention + 1, 0, 100); }
+  else if (a.dominant === 'saklig' || a.dominant === 'kansla') { note = 'Ett vänligt, konkret svar. Folk noterar att du svarar.'; const acct = state.social.followers[leader.id]; if (acct) acct[post.platform] = Math.round((acct[post.platform] || 0) + post.reach * .0005); }
+  else note = 'Du svarade.';
+  return note;
+}
+
 // Veckovis: följarna växer sakta med uppmärksamheten; AI-ledare postar; gamla inlägg grävs fram
 export function weeklySocial(state, rnd) {
   const out = [];
@@ -136,7 +206,7 @@ export function weeklySocial(state, rnd) {
   }
   // gamla inlägg grävs fram – sannolikheten ökar med risk, uppmärksamhet och valrörelse
   const me = state.parties[state.player.partyId];
-  const old = state.social.posts.filter((po) => !po.resurfaced && state.week - po.week > 6 && po.risk > 12);
+  const old = state.social.posts.filter((po) => !po.resurfaced && state.week - po.week > 6 && po.risk > 12 && (!po.deleted || po.screenshot));
   for (const po of old) {
     const pr = (po.risk / 100) * .035 * (1 + me.attention / 60) * (state.election.campaign ? 2.5 : 1);
     if (rnd() < pr) { po.resurfaced = true; out.push(po); break; }

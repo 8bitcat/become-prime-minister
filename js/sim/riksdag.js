@@ -102,7 +102,12 @@ export function resolveVote(state, rnd, item, playerVote) {
     const n = seats[p.id] || 0; if (!n) continue;
     const v = p.isPlayer && playerVote ? playerVote : aiVote(state, p, { ...bill, deals: item.deals }, item.proposer);
     votes[p.id] = v;
-    if (v === 'ja') ja += n; else if (v === 'nej') nej += n; else avst += n;
+    // ledamöter som bryter partilinjen: svag linje + dålig sammanhållning
+    const st = stance(p, bill);
+    let rebels = 0;
+    if (n >= 4 && (p.unity ?? 70) < 58 && Math.abs(st) < .3 && rnd() < .5) rebels = Math.min(n - 1, Math.round(n * ((58 - (p.unity ?? 70)) / 100) * .4 * rnd()));
+    if (rebels > 0) { (item.rebels ||= {})[p.id] = rebels; votes[p.id] = `${v} (${rebels} bröt linjen)`; if (v === 'ja') { ja += n - rebels; nej += rebels; } else if (v === 'nej') { nej += n - rebels; ja += rebels; } else { avst += n - rebels; ja += rebels; } }
+    else if (v === 'ja') ja += n; else if (v === 'nej') nej += n; else avst += n;
     (state.riksdag.record[p.id] ||= []).push({ billId: bill.id, vote: v, week: state.week, title: bill.title, kind: item.kind || 'bill' });
     if (state.riksdag.record[p.id].length > 40) state.riksdag.record[p.id].shift();
   }
