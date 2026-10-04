@@ -7,6 +7,10 @@ git-tagg (`v0.1.0` osv.).
 
 <!-- släpp: tools/release.mjs lägger nya versioner direkt under denna rad -->
 
+## [0.4.1] – 2026-10-04 – Löften i hela meningar
+- Löfteskollen: "för alla under 30 år" och årtal som "till 2030" tolkas inte längre som löften om antal år, och löftestexten är hela meningen i stället för ett klipp mitt i ett ord.
+- Textanalysen: en text utan tydliga tonsignaler räknas som saklig (inte konfrontativ).
+
 ## [0.4.0] – 2026-10-04 – Du skriver dina egna svar
 - Du väljer inte svar – du skriver dem själv. Inlägg, debattsvar, presskonferenser, tal, utspel, förhandlingsbud, erbjudanden i regeringsbildningen och enskilda samtal skrivs i fri text. Spelet läser vad du faktiskt skrev: ton (saklig, kämpande, konfrontativ, humor, personlig, undvikande), vilka sakfrågor du berör och åt vilket håll, om du svarar på frågan, löften med siffror, faktapåståenden mot den riktiga statistiken, angrepp på partier, vaghet och risk. Analysen är inbyggd och fungerar utan nätverk.
 - Valfritt Claude-läge (☰ Meny → AI-läge): med en egen Anthropic-nyckel analyserar Claude dina texter och skriver journalisternas, motståndarnas, väljarnas och partiledarnas repliker. Nyckeln sparas bara i webbläsaren, anropen går direkt från din dator och du betalar själv.

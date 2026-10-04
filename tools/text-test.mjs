@@ -44,6 +44,10 @@ ok(a.dominant === 'undvikande' && a.answers < .45, `analys: undvikande svar (ans
 a = analyzeText('haha nej, regeringens plan är ett skämt 😂 vi föreslår riktiga reformer', ctx);
 ok(a.dominant === 'humor', 'analys: humor');
 a = analyzeText('', ctx); ok(a.vague && a.clarity === 0, 'analys: tom text är vag');
+a = analyzeText('Vi inför gratis tandvård för alla under 30 år. Det kostar 4 miljarder.', ctx);
+ok(!a.promises.some((p) => p.unit === 'år'), 'analys: "under 30 år" är en ålder, inte ett löfte');
+a = analyzeText('Kära vänner! Ni är inte bortglömda. Vi lovar 3 miljarder till vägarna här uppe. Tack.', ctx);
+ok(a.promises.length === 1 && a.promises[0].text.startsWith('Vi lovar 3 miljarder'), `analys: löftestexten är hela meningen ("${a.promises[0]?.text}")`);
 
 // --- manifestet registrerades vid start ---
 ok(state.memory.statements.length === 1 && state.memory.statements[0].kind === 'program', 'programförklaringen sparades i minnet');

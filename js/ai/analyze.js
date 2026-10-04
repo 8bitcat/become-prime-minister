@@ -64,7 +64,14 @@ export function analyzeText(text, ctx = {}) {
   // löften med siffror: "200 000 nya bostäder", "sänka skatten med 10 procent", "inom fyra år"
   const promiseRe = /(ska|kommer att|lovar|garanterar|inför|införa|bygga|sänka|höja|halvera|fördubbla|avskaffa)[^.!?]{0,80}?(\d[\d\s]{0,8}(?:[.,]\d+)?)\s*(procent|%|miljarder|miljoner|tusen|kronor|kr|nya bostäder|bostäder|poliser|platser|år|mdkr)/g;
   let m;
-  while ((m = promiseRe.exec(t))) { const num = parseNumber(m[2]); if (num == null) continue; const sentence = text.slice(Math.max(0, m.index - 10), m.index + m[0].length + 20).trim(); out.promises.push({ text: sentence, number: num, unit: m[3], issue: Object.keys(out.issues)[0] || null }); }
+  // meningen som löftet står i (hela, inte ett klipp mitt i ett ord)
+  const sentenceAt = (idx) => { let s = 0; for (const seg of text.split(/(?<=[.!?])\s+/)) { if (idx < s + seg.length + 1) return seg.trim(); s += seg.length + 1; } return text.slice(0, 160); };
+  while ((m = promiseRe.exec(t))) {
+    const num = parseNumber(m[2]); if (num == null) continue;
+    const before = t.slice(Math.max(0, m.index + m[0].length - m[2].length - m[3].length - 12), m.index + m[0].length - m[2].length - m[3].length);
+    if (m[3] === 'år' && (/(under|över|äldre än|yngre än|fyllt|vid|från)\s*$/.test(before) || num > 60)) continue; // ålder eller årtal, inte ett löfte
+    out.promises.push({ text: sentenceAt(m.index).slice(0, 200), number: num, unit: m[3], issue: Object.keys(out.issues)[0] || null });
+  }
   if (/(ska|kommer att|lovar|garanterar)/.test(t) && !out.promises.length && (/(aldrig|alltid|inom|senast)/.test(t))) out.promises.push({ text: text.slice(0, 140), number: null, unit: null, issue: Object.keys(out.issues)[0] || null, absolute: /aldrig|alltid/.test(t) });
   // faktapåståenden: "arbetslösheten är 3 %"
   const stats = ctx.stats || {};
