@@ -4,6 +4,7 @@ import { STAT_BY_ID } from '../data/stats.js';
 import { modal, info } from './modal.js';
 import { activeParties } from '../sim/opinion.js';
 import { addNews } from '../sim/news.js';
+import { POLICY_BY_ID, BUDGET_POLICY } from '../data/policies.js';
 
 const SPEND = ['utg_sjukvard', 'utg_utbildning', 'utg_forsvar', 'utg_polis', 'utg_rattsvasende', 'utg_socialt', 'utg_pensioner', 'utg_aldreomsorg', 'utg_infrastruktur', 'utg_klimat', 'utg_kultur', 'utg_bistand', 'utg_migration', 'utg_ovrigt'];
 const TAX = [['skatt_kommunal', 28, 36, .1], ['skatt_statlig', 0, 35, 1], ['skatt_bolag', 10, 30, .1], ['moms', 15, 30, .5], ['skatt_kapital', 15, 45, 1], ['skatt_koldioxid', 0, 3000, 10], ['skatt_bensin', 0, 12, .1], ['arbetsgivaravgift', 20, 40, .1]];
@@ -32,7 +33,7 @@ export function runBudget(state, rnd) {
       const shiftL = SPEND.reduce((a, id) => a + (draft[id] - s[id]), 0) > 0 ? 1 : -1; // expansiv = vänster-ish
       for (const q of activeParties(state)) { const n = seats[q.id] || 0; if (!n) continue; if (gov.parties.includes(q.id) || gov.support.includes(q.id)) ja += n; else if ((q.pos.ekonomi < 0 && shiftL > 0) || (q.pos.ekonomi > 0 && shiftL < 0)) { if (rnd() < .35) ja += n; else nej += n; } else nej += n; }
       const passed = ja > nej;
-      if (passed) { for (const id in draft) s[id] = draft[id]; gov.budgets = (gov.budgets || 0) + 1; gov.performance = clamp((gov.performance || 0) + 1.5, -10, 10); me.credibility = clamp(me.credibility + 2, 0, 100); }
+      if (passed) { for (const id in draft) { s[id] = draft[id]; const pid = BUDGET_POLICY[id] || (POLICY_BY_ID[id] ? id : null); if (pid) state.policy[pid] = id.startsWith('utg_') ? Math.round(draft[id] / (state.sweden.priceIndex || 1)) : draft[id]; } state.reforms = (state.reforms || []).filter((r) => !(POLICY_BY_ID[r.policyId]?.budget || POLICY_BY_ID[r.policyId]?.id in draft)); gov.budgets = (gov.budgets || 0) + 1; gov.performance = clamp((gov.performance || 0) + 1.5, -10, 10); me.credibility = clamp(me.credibility + 2, 0, 100); }
       else { gov.crisis = (gov.crisis || 0) + 3; gov.performance = clamp((gov.performance || 0) - 3, -10, 10); }
       const c = calc();
       addNews(state, { outlet: 'svt', headline: passed ? `Regeringens budget antagen – saldo ${c.saldo >= 0 ? '+' : ''}${fmt(c.saldo)} mdkr` : 'Regeringens budget föll i riksdagen', body: passed ? `${ja} ja mot ${nej} nej. ${c.saldo < -80 ? 'Ekonomer varnar för underskottet.' : c.saldo > 50 ? 'Oppositionen kallar budgeten "svältkur".' : 'Budgeten beskrivs som balanserad.'}` : `${nej} ledamöter röstade nej. Regeringen tvingas regera på oppositionens budget – en djup kris.`, tags: ['politik', 'ekonomi'], partyId: me.id, importance: 3, tone: passed ? 1 : -1 });

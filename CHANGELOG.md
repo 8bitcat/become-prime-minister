@@ -7,6 +7,17 @@ git-tagg (`v0.1.0` osv.).
 
 <!-- släpp: tools/release.mjs lägger nya versioner direkt under denna rad -->
 
+## [0.3.0] – 2026-10-04 – Politiken bygger du själv
+- Politiken är nu ett verktygssystem: 132 områden i 14 domäner (migration, skatter, ekonomi & ägande, arbetsmarknad, vård, socialförsäkringar, skola & forskning, brott & straff, fri- och rättigheter, statsskick, försvar, utrikes & EU, energi & klimat, infrastruktur & samhälle). Varje område är ett reglage eller en lag med gällande rätt i Sverige, ert partiprogram, effekter på simuleringen, kostnad och genomförandetid.
+- Ideologin härleds ur politiken: partiets tolv väljaraxlar och en niodimensionell kompass (ekonomi, makt, omvärld, kultur, styrning, säkerhet, religion, välfärd, miljö) räknas ut ur programmet. Spelet berättar vilken ideologi din faktiska politik liknar – och partiprogrammet skrivs automatiskt.
+- Reformer genom riksdagen: föreslå att en lag ändras, partierna röstar efter sina egna program (ett förslag nära deras program går lättare igenom). Som statsminister kostar varje reform politiskt kapital som växer tillbaka med tiden. Regeringsöverenskommelsen är kompromissen mellan regeringspartiernas program.
+- Att besluta är inte att genomföra: varje reform har en genomförandetid (3 månader till 10 år), myndigheternas kapacitet bromsar när för många reformer pågår samtidigt, effekten kan bli större eller mindre än beräknat och en fjärdedel av reformerna får oavsiktliga bieffekter.
+- Grundlagsändringar (domstolar, yttrandefrihet, medier, statsskick, riksdagsspärr, mandatperiod, valsystem, regeringsmakt) kräver två riksdagsbeslut med ett val emellan.
+- Gränsfallen finns: lämna EU eller NATO, basinkomst, bidragssystemet avskaffat, nationaliserade banker och industrier, 90 procent kärnkraft, massutvisningsprogram, republik, statskyrka, massövervakning, majoritetsval – alla med simulerade konsekvenser för ekonomi, demokratiindex, relationer, protester och opinion.
+- Spärren, mandatperioden och valsystemet följer nu gällande lag; AI-regeringar driver reformer mot sitt program och AI-partierna flyttar sig genom att ändra sitt program.
+- Budgeten skriver in sig i lagen, och lagförslag som rör skatter och utgifter håller lagen uppdaterad.
+- Ny sida "Politiken", reformer under genomförande och politiskt kapital på Regeringen-sidan, kompass och härledd ideologi på Partiet-sidan. Gamla sparningar uppgraderas.
+
 ## [0.2.0] – 2026-10-04 – Partiet och personen – på riktigt
 - Partiskaparen i fem steg: identitet, ideologi (51 ideologier – huvudideologi plus upp till två sekundära som drar positionerna mot sig; systemfientliga och antidemokratiska ideologier isoleras av andra partier och medier), finjusterad politik och hjärtefrågor, organisation (centralisering, partiledarens makt, lokal självständighet, hur ledare och kandidater utses, stadgar, ungdomsförbund) och målgrupper (upp till fyra väljargrupper).
 - Personskaparen: vanliga människor i anime-grafik – kroppstyp, 19 frisyrer, näsa, ögonform, fräknar, födelsemärken, örhängen, läppstift, 27 plagg från kostym till hoodie och arbetsjacka med egna färger, stil (formell/avslappnad/folklig/elegant), röst, kroppsspråk, 40 yrken med trovärdighet i sakfrågor, politisk erfarenhet, civilstånd, barn, livsåskådning, upp till fyra personlighetsdrag som justerar egenskaperna och låser upp beteenden, samt en offentlig image som kan krocka med personligheten (äkthetsrisk).

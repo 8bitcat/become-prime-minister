@@ -30,6 +30,11 @@ Sparfilen kan exporteras/importeras som JSON från menyn.
   färger, ansiktsdetaljer, stil, röst, kroppsspråk, 40 yrken med trovärdighet i sakfrågor, politisk
   erfarenhet, familj, livsåskådning, personlighetsdrag och offentlig image (äkthet). Tio egenskaper
   styr debatter, kriser, förhandlingar och skandalrisk.
+- **Politiken som verktygssystem**: 132 områden i 14 domäner med gällande lag, partiprogram,
+  effekter, kostnad och genomförandetid. Ideologi och kompass härleds ur programmet. Reformer röstas i
+  riksdagen efter partiernas program, kostar politiskt kapital, genomförs med fördröjning, bromsas av
+  myndigheternas kapacitet och kan få oavsiktliga konsekvenser. Grundlagsändringar kräver två beslut
+  med val emellan. Lämna EU eller NATO, inför basinkomst, nationalisera, bygg 90 % kärnkraft.
 - **Partiets inre liv**: falanger, partiledarstrider, partisplittringar som föder nya partier,
   aktivister, partikongresser, ekonomi rad för rad. Lämna posten och fortsätt med en efterträdare.
 - **Förtroende & löften**: valmanifest, löfteskollen, förtroende skilt från popularitet.

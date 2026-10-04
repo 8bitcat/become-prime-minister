@@ -15,6 +15,8 @@ import { nextElectionDay } from './election.js';
 import { SAVE_VERSION } from '../core/state.js';
 import { defaultStructure, initFactions } from './party.js';
 import { initJournalists, initInfluencers } from './media.js';
+import { defaultPolicy } from '../data/policies.js';
+import { programFromAxes, syncAxes, coalitionAgreement } from './policy.js';
 
 const START_DATE = { y: 2027, m: 1, d: 4 }; // måndag
 const START_IDEOLOGY = { s: 'socialdemokrati', sd: 'nationalkonservatism', m: 'liberalkonservatism', v: 'dem_socialism', c: 'gron_liberalism', kd: 'kristdemokrati', mp: 'gron', l: 'liberalism' };
@@ -96,7 +98,9 @@ export function newGame({ seed = Date.now() % 2147483647, mode, takeoverId, part
     journalists: initJournalists(rnd), influencers: initInfluencers(rnd),
     history: { leaders: [], timeline: [{ date: { ...START_DATE }, week: 0, kind: 'start', text: mode === 'new' ? `${playerParty.name} bildas av ${leader.name}.` : `${leader.name} tar över som partiledare för ${playerParty.name}.` }], bios: [] },
     ap: 4, apMax: 4, queue: [], log: [], flags: {}, stats: { weeks: 0, debates: 0, debatesWon: 0, billsPassed: 0, posts: 0 },
+    policy: defaultPolicy(), reforms: [],
   };
+  for (const p of Object.values(parties)) { p.program = programFromAxes(p.pos); if (!p.isPlayer || mode === 'takeover') syncAxes(p); else { /* nytt parti: programmet härleds ur den valda ideologin */ syncAxes(p); } }
   for (const p of Object.values(parties)) { state.opinion.awareness[p.id] = p.inRiksdag ? 1 : 0.004; state.history.leaders.push({ personId: p.leader, partyId: p.id, name: people[p.leader].name, from: people[p.leader].since || { ...START_DATE }, to: null, reason: null }); }
   for (const j of Object.values(state.journalists)) { people[j.person.id] = j.person; delete j.person; j.personId = Object.keys(people).find((id) => people[id].name === j.name); }
   const targets = {}; for (const p of Object.values(parties)) if (p.inRiksdag) targets[p.id] = (p.seats / RIKSDAG_SEATS) * 100 * (0.97 + rnd() * 0.06);
@@ -104,7 +108,7 @@ export function newGame({ seed = Date.now() % 2147483647, mode, takeoverId, part
   calibrateBase(state, targets);
   for (const p of Object.values(parties)) { p.posStart = { ...p.pos }; initFactions(state, rnd, p); }
   const gov = formGovernmentAI(state, rnd);
-  if (gov) { state.government = gov; state.government.formed = { y: 2026, m: 10, d: 15 }; state.government.history = []; state.history.timeline.push({ date: { y: 2026, m: 10, d: 15 }, week: -12, kind: 'regering', text: `Regeringen ${gov.parties.map((id) => parties[id].abbr).join('+')} tillträder under ${people[gov.pm].name}.` }); }
+  if (gov) { state.government = gov; state.government.formed = { y: 2026, m: 10, d: 15 }; state.government.history = []; state.government.capital = 55; state.government.agreement = coalitionAgreement(state, [...gov.parties, ...gov.support]); state.history.timeline.push({ date: { y: 2026, m: 10, d: 15 }, week: -12, kind: 'regering', text: `Regeringen ${gov.parties.map((id) => parties[id].abbr).join('+')} tillträder under ${people[gov.pm].name}.` }); }
   for (let i = 0; i < 3; i++) makePoll(state, rnd);
   initSocial(state);
   const pmP = gov ? parties[gov.pmParty] : null;

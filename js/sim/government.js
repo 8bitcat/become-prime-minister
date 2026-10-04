@@ -74,7 +74,7 @@ export function formGovernmentAI(state, rnd, { exclude = [], round = 1 } = {}) {
       total += seats[q.id];
     }
     const vote = toleranceVote(state, pm, coalition, supporters, round);
-    candidates.push({ pm, coalition, supporters, vote, total, score: (vote.passed ? 1000 : 0) + total });
+    candidates.push({ pm, coalition, supporters, vote, total, score: (vote.passed ? 1000 : 0) + total - (pm.ext || 0) * 12 + (state.government?.pmParty === pm.id ? 3 : 0) });
   }
   candidates.sort((a, b) => b.score - a.score);
   const best = candidates.find((c) => c.vote.passed);
@@ -91,7 +91,8 @@ export function buildGovernment(state, rnd, pmPartyId, coalition, supporters, vo
   const gov = {
     pm: pmParty.leader, pmParty: pmPartyId, parties: partiesIn, support: supporters, formed: { ...state.date },
     type: govSeats >= 175 ? 'majority' : withSupport >= 175 ? 'minority-support' : 'minority',
-    approval: 48, crisis: 0, ministers: {}, vote, performance: 0, budgets: 0,
+    approval: 48, crisis: 0, ministers: {}, vote, performance: 0, budgets: 0, capital: 55,
+    agreement: coalitionAgreement(state, [...partiesIn, ...supporters]),
   };
   // ministrar: posterna fördelas efter mandat, starkaste personerna till viktigaste posterna
   const pool = partiesIn.flatMap((id) => (state.parties[id].people || []).map((pid) => state.people[pid]).filter((x) => x && x.alive && x.id !== pmParty.leader));
@@ -138,8 +139,9 @@ export function aiBudget(state, rnd) {
   if (pos.valfard < -20) { adj('utg_sjukvard', 2, 'Mer till vården'); adj('utg_utbildning', 1.5, 'Mer till skolan'); }
   if (pos.landsbygd > 40) adj('utg_infrastruktur', 3, 'Vägar och järnväg på landsbygden');
   if (pos.migration > 40) adj('utg_migration', -4, 'Lägre migrationskostnader');
-  if (pos.energi > 50) sweden_nuclear(state, 2);
+  if (pos.energi > 50) state.policy.karnkraft_mal = Math.min(150, (state.policy.karnkraft_mal ?? 48) + 2);
   gov.budgets = (gov.budgets || 0) + 1;
+  syncLawFromStats(state);
   return changes;
 }
-function sweden_nuclear(state, twh) { state.sweden.nuclearTarget = (state.sweden.nuclearTarget ?? state.sweden.stats.el_karnkraft) + twh; }
+import { syncLawFromStats, coalitionAgreement } from './policy.js';

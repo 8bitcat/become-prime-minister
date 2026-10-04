@@ -26,16 +26,21 @@ import { manifestCandidates } from '../sim/promises.js';
 import { SEGMENTS } from '../data/segments.js';
 import { renderLeaderCreator, blankLeader, finalizeLeader } from './leader-creator.js';
 import { makePerson, applyPersona, credOf, personSummary, personaSummary } from '../sim/people.js';
+import { pagePolitik, reformPicker, programModalBody } from './politik.js';
+import { itemBill } from '../sim/riksdag.js';
+import { POLICY_BY_ID, policyLabel } from '../data/policies.js';
 
 const me = () => G.state.parties[G.state.player.partyId];
 const leader = () => G.state.people[me().leader];
-const NAV = [['oversikt', '🏠', 'Översikt'], ['partiet', '🎗️', 'Partiet'], ['sverige', '🇸🇪', 'Sverige'], ['riksdagen', '🏛️', 'Riksdagen'], ['opinion', '📊', 'Opinion'], ['nyheter', '📰', 'Nyheter'], ['some', '📱', 'Sociala medier'], ['regeringen', '👔', 'Regeringen'], ['valet', '🗳️', 'Valet'], ['varlden', '🌍', 'Världen'], ['historik', '📜', 'Historik']];
+const NAV = [['oversikt', '🏠', 'Översikt'], ['partiet', '🎗️', 'Partiet'], ['politik', '⚖️', 'Politiken'], ['sverige', '🇸🇪', 'Sverige'], ['riksdagen', '🏛️', 'Riksdagen'], ['opinion', '📊', 'Opinion'], ['nyheter', '📰', 'Nyheter'], ['some', '📱', 'Sociala medier'], ['regeringen', '👔', 'Regeringen'], ['valet', '🗳️', 'Valet'], ['varlden', '🌍', 'Världen'], ['historik', '📜', 'Historik']];
 
 export const UI = {
   page: 'oversikt', sub: undefined, busy: false, onExit: null,
   go(page, sub) { this.page = page; this.sub = sub; this.render(); },
   render(page, sub) { if (page) { this.page = page; this.sub = sub; } renderShell(); },
   action(a, extra) { actionDialog(a, extra); },
+  programModal() { modal({ title: 'Partiprogrammet', body: programModalBody(G.state), wide: true, buttons: [{ label: 'Stäng', cls: 'gold' }] }); },
+  currentPage: null,
   post(params) { postFlow(params); },
   budget() { budgetFlow(); },
   resign() { resignFlow(); },
@@ -66,6 +71,7 @@ function renderShell() {
   const nav = h('div', { class: 'sidenav' });
   for (const [id, ic, name] of NAV) {
     const b = h('button', { class: UI.page === id ? 'on' : '', onclick: () => UI.go(id) }, h('span', { class: 'ic' }, ic), name);
+    if (id === 'politik') { const n = (s.reforms || []).filter((r) => r.progress < 1).length; if (n) b.append(h('span', { class: 'badge', style: 'background:var(--green);color:#052a1a' }, String(n))); }
     if (id === 'riksdagen') { const n = s.riksdag.bills.filter((x) => x.status === 'pending' && x.byPlayer).length; if (n) b.append(h('span', { class: 'badge' }, String(n))); }
     if (id === 'nyheter') { const n = s.news.filter((x) => x.week === s.week).length; if (n) b.append(h('span', { class: 'badge', style: 'background:var(--blue)' }, String(n))); }
     nav.append(b);
@@ -73,7 +79,7 @@ function renderShell() {
   nav.append(h('div', { class: 'sep' }), h('button', { onclick: helpDialog }, h('span', { class: 'ic' }, '❓'), 'Hjälp'), h('div', { style: 'flex:1' }), h('small', { class: 'muted', style: 'padding:6px 10px' }, `v${VERSION} · autosparat ${new Date(s.updated).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}`));
   const content = h('div', { class: 'content' });
   const inner = h('div', { class: 'inner' });
-  try { inner.append((PAGES[UI.page] || PAGES.oversikt)(s, UI, UI.sub)); } catch (e) { console.error(e); inner.append(h('div', { class: 'card' }, 'Kunde inte rita sidan: ' + e.message)); }
+  try { const pageEl = UI.page === 'politik' ? pagePolitik(s, UI, UI.sub) : (PAGES[UI.page] || PAGES.oversikt)(s, UI, UI.sub); UI.currentPage = pageEl; inner.append(pageEl); } catch (e) { console.error(e); inner.append(h('div', { class: 'card' }, 'Kunde inte rita sidan: ' + e.message)); }
   content.append(inner);
   game.append(top, nav, content);
   app.append(game);
@@ -161,10 +167,10 @@ async function resurfacedDialog(po) {
 }
 async function voteDialog(item) {
   if (!item) return;
-  const s = G.state; const b = BILL_BY_ID[item.billId]; const prop = s.parties[item.proposer];
+  const s = G.state; const b = itemBill(s, item); const prop = s.parties[item.proposer];
   const exp = expectedVote(s, item); const mine = s.riksdag.seats[me().id] || 0; const st = stance(me(), b);
   const owed = (s.riksdag.owed || []).find((o) => o.to === item.proposer);
-  const i = await choice({ title: `Omröstning: ${b.title}`, text: `<p>${esc(b.desc)}</p><p>Föreslaget av <b>${esc(prop.name)}</b>. Kostnad: ${b.cost > 0 ? b.cost + ' mdkr/år' : b.cost < 0 ? 'sparar ' + -b.cost + ' mdkr/år' : 'ingen'}.</p><p>Övriga partier väntas rösta: <span class="up">${exp.ja} ja</span>, <span class="down">${exp.nej} nej</span>, ${exp.avst} avstår. Ni har <b>${mine}</b> mandat. ${mine >= Math.abs(exp.ja - exp.nej) ? '<b>Er röst avgör.</b>' : ''}</p><p class="muted">Partiets politik ${st > .3 ? 'talar för' : st < -.3 ? 'talar emot' : 'är kluven om'} förslaget.${owed ? ` <b>Ni har lovat ${esc(prop.abbr)} ert stöd i en tidigare uppgörelse – ett nej skadar relationen svårt.</b>` : ''}</p>`, choices: [{ label: 'Rösta JA', cls: 'green' }, { label: 'Rösta NEJ', cls: 'red' }, { label: 'Avstå' }] });
+  const i = await choice({ title: `${item.kind === 'reform' ? (item.second ? 'Andra beslutet (grundlag): ' : 'Reform: ') : 'Omröstning: '}${b.title}`, text: `<p>${esc(b.desc)}</p>${item.kind === 'reform' ? `<p>Gällande lag: <b>${esc(policyLabel(POLICY_BY_ID[item.policyId], item.from))}</b> → föreslås: <b>${esc(policyLabel(POLICY_BY_ID[item.policyId], item.to))}</b>. Ert program: ${esc(policyLabel(POLICY_BY_ID[item.policyId], me().program?.[item.policyId] ?? POLICY_BY_ID[item.policyId].def))}.</p>` : ''}<p>Föreslaget av <b>${esc(prop.name)}</b>. Kostnad: ${b.cost > 0 ? b.cost + ' mdkr/år' : b.cost < 0 ? 'sparar ' + -b.cost + ' mdkr/år' : 'ingen'}.</p><p>Övriga partier väntas rösta: <span class="up">${exp.ja} ja</span>, <span class="down">${exp.nej} nej</span>, ${exp.avst} avstår. Ni har <b>${mine}</b> mandat. ${mine >= Math.abs(exp.ja - exp.nej) ? '<b>Er röst avgör.</b>' : ''}</p><p class="muted">Partiets politik ${st > .3 ? 'talar för' : st < -.3 ? 'talar emot' : 'är kluven om'} förslaget.${owed ? ` <b>Ni har lovat ${esc(prop.abbr)} ert stöd i en tidigare uppgörelse – ett nej skadar relationen svårt.</b>` : ''}</p>`, choices: [{ label: 'Rösta JA', cls: 'green' }, { label: 'Rösta NEJ', cls: 'red' }, { label: 'Avstå' }] });
   const v = ['ja', 'nej', 'avstår'][i];
   if (owed && v !== 'ja') { prop.relations[me().id] = clamp((prop.relations[me().id] || 0) - 30, -100, 100); me().credibility = clamp(me().credibility - 4, 0, 100); }
   if (owed && v === 'ja') s.riksdag.owed = s.riksdag.owed.filter((o) => o !== owed);
@@ -189,6 +195,8 @@ async function actionDialog(a, extra = {}) {
   if (a.needs === 'bill') return billDialog(run);
   if (a.needs === 'negotiate') return negotiateDialog(extra.itemId);
   if (a.needs === 'structure') return kongressDialog(run);
+  if (a.needs === 'reform') return reformPicker(s, run, modal, choice);
+  if (a.needs === 'program') { if (extra.changes) return run({ changes: extra.changes }); return UI.go('politik'); }
   if (a.needs === 'manifest') return manifestDialog(false, run);
   if (a.needs === 'succession') return successionFlow(false, run);
 }

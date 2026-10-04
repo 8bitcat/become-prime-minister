@@ -3,6 +3,7 @@ import { ISSUES } from '../data/issues.js';
 import { activeParties } from './opinion.js';
 import { clamp, pick, weighted } from '../core/util.js';
 import { willingness } from './government.js';
+import { reformStance, billLike, applyReform, syncLawFromStats } from './policy.js';
 
 // Förslagspoolen. vec = vilken riktning förslaget drar på varje axel (-1…1), eff = effekt på Sverige.
 const B = (id, title, area, vec, desc, eff, cost = 0) => ({ id, title, area, vec, desc, eff, cost });
@@ -27,7 +28,7 @@ export const BILLS = [
   B('sprakkrav', 'Språkkrav för medborgarskap', 'migration', { migration: .8, varderingar: .5 }, 'Godkänt språktest krävs för medborgarskap.', (s) => { s.integration += .5; }, 0),
   B('klimatlag', 'Skärpt klimatlag', 'klimat', { klimat: -1 }, 'Nettonoll 2040 och bindande utsläppsbudgetar.', (s) => { s.utg_klimat += 10; s.skatt_koldioxid += 150; }, 10),
   B('bensin_ner', 'Sänkt bensinskatt', 'klimat', { klimat: 1, landsbygd: .8 }, 'Skatten på bensin och diesel sänks med två kronor.', (s) => { s.skatt_bensin -= 2; }, -12),
-  B('karnkraft_ny', 'Nya kärnkraftsreaktorer', 'energi', { energi: 1 }, 'Statliga lånegarantier för fyra nya reaktorer.', (s, st) => { st.sweden.nuclearTarget = (st.sweden.nuclearTarget ?? s.el_karnkraft) + 20; s.utg_ovrigt += 8; }, 8),
+  B('karnkraft_ny', 'Nya kärnkraftsreaktorer', 'energi', { energi: 1 }, 'Statliga lånegarantier för fyra nya reaktorer.', (s, st) => { st.policy.karnkraft_mal = Math.min(150, (st.policy.karnkraft_mal ?? 48) + 20); s.utg_ovrigt += 8; }, 8),
   B('vind_hav', 'Storsatsning på havsbaserad vindkraft', 'energi', { energi: -1, klimat: -.5 }, 'Staten bekostar anslutning av 30 TWh vindkraft.', (s) => { s.el_vind += 6; s.utg_ovrigt += 5; }, 5),
   B('elstod', 'Elprisstöd till hushållen', 'energi', { ekonomi: -.4, landsbygd: .3 }, 'Kompensation när elpriset passerar 150 öre.', (s) => { s.utg_socialt += 8; s.konsumentfortroende += 2; }, 8),
   B('forsvar_3', 'Försvaret till 3 procent av BNP', 'forsvar', { forsvar: 1 }, 'Upptrappning över fyra år.', (s) => { s.utg_forsvar += 25; }, 25),
@@ -56,13 +57,14 @@ export const BILLS = [
   B('public_service_ner', 'Minskad public service-avgift', 'varderingar', { varderingar: .6, ekonomi: .4 }, 'SVT och SR:s anslag minskas med 20 procent.', (s) => { s.pressfrihet -= 2; s.utg_kultur -= 2; }, -2),
   B('overvakning', 'Utökad kameraövervakning och avlyssning', 'kriminal', { kriminal: .8, varderingar: .3 }, 'Hemlig dataavläsning utan brottsmisstanke mot gängmiljöer.', (s) => { s.uppklarning += 1; s.rattssakerhet -= 2; }, 2),
   B('grundlag_val', 'Fler valdagar och lägre spärr', 'varderingar', { varderingar: -.4 }, 'Riksdagsspärren sänks till 3 procent (grundlagsändring).', (s, st) => { st.flags.threshold3 = true; }, 0),
-  B('undantag_tillstand', 'Lag om undantagstillstånd', 'forsvar', { forsvar: .6, varderingar: .6 }, 'Regeringen får utökade befogenheter vid kris utan riksdagsbeslut.', (s, st) => { st.sweden.demokratiMal = (st.sweden.demokratiMal ?? 9.3) - .4; s.rattssakerhet -= 4; }, 0),
-  B('demokrati_starkt', 'Stärkt författningsdomstol', 'varderingar', { varderingar: -.3, eu: .3 }, 'En fristående författningsdomstol prövar lagar mot grundlagen.', (s, st) => { st.sweden.demokratiMal = (st.sweden.demokratiMal ?? 9.3) + .2; s.rattssakerhet += 2; }, 1),
+  B('undantag_tillstand', 'Lag om undantagstillstånd', 'forsvar', { forsvar: .6, varderingar: .6 }, 'Regeringen får utökade befogenheter vid kris utan riksdagsbeslut.', (s, st) => { st.policy.regeringsmakt = 'dekret'; s.rattssakerhet -= 4; }, 0),
+  B('demokrati_starkt', 'Stärkt författningsdomstol', 'varderingar', { varderingar: -.3, eu: .3 }, 'En fristående författningsdomstol prövar lagar mot grundlagen.', (s, st) => { st.policy.domstolar = 'forfattningsdomstol'; s.rattssakerhet += 2; }, 1),
 ];
 export const BILL_BY_ID = Object.fromEntries(BILLS.map((b) => [b.id, b]));
 
 // Hur ställer sig ett parti till ett förslag? (-1…1)
 export function stance(party, bill) {
+  if (bill?.kind === 'reform') return reformStance(party, bill);
   let s = 0, w = 0;
   for (const k in bill.vec) { s += bill.vec[k] * (party.pos[k] || 0) / 100; w += Math.abs(bill.vec[k]); }
   return w ? s / w : 0;
@@ -91,8 +93,9 @@ export function proposeBill(state, rnd, proposerId, billId, { byPlayer = false }
   return item;
 }
 
+export const itemBill = (state, item) => (item.kind === 'reform' ? billLike(state, item) : BILL_BY_ID[item.billId]);
 export function resolveVote(state, rnd, item, playerVote) {
-  const bill = BILL_BY_ID[item.billId];
+  const bill = itemBill(state, item);
   const seats = state.riksdag.seats;
   const votes = {}; let ja = 0, nej = 0, avst = 0;
   for (const p of activeParties(state)) {
@@ -100,15 +103,15 @@ export function resolveVote(state, rnd, item, playerVote) {
     const v = p.isPlayer && playerVote ? playerVote : aiVote(state, p, { ...bill, deals: item.deals }, item.proposer);
     votes[p.id] = v;
     if (v === 'ja') ja += n; else if (v === 'nej') nej += n; else avst += n;
-    (state.riksdag.record[p.id] ||= []).push({ billId: bill.id, vote: v, week: state.week, title: bill.title });
+    (state.riksdag.record[p.id] ||= []).push({ billId: bill.id, vote: v, week: state.week, title: bill.title, kind: item.kind || 'bill' });
     if (state.riksdag.record[p.id].length > 40) state.riksdag.record[p.id].shift();
   }
   const passed = ja > nej;
   item.status = passed ? 'passed' : 'failed'; item.votes = votes; item.ja = ja; item.nej = nej; item.avst = avst; item.resolvedWeek = state.week;
   if (passed) {
-    bill.eff(state.sweden.stats, state);
+    if (item.kind === 'reform') { applyReform(state, rnd, item); }
+    else { bill.eff(state.sweden.stats, state); syncLawFromStats(state); (state.sweden.reforms ||= []).push({ billId: bill.id, title: bill.title, date: { ...state.date }, proposer: item.proposer }); }
     state.sweden.reformBoost = (state.sweden.reformBoost || 0) + (bill.cost < 0 ? .05 : 0);
-    (state.sweden.reforms ||= []).push({ billId: bill.id, title: bill.title, date: { ...state.date }, proposer: item.proposer });
     state.riksdag.passedRecently = (state.riksdag.passedRecently || 0) + 1;
     state.opinion.boost[bill.area] = (state.opinion.boost[bill.area] || 0) + .15;
     const prop = state.parties[item.proposer];
@@ -134,7 +137,7 @@ export function aiProposals(state, rnd) {
   for (let i = 0; i < n; i++) {
     const p = weighted(rnd, parties, (q) => (gov.parties.includes(q.id) ? 3 : 1) * Math.sqrt(state.riksdag.seats[q.id] || 1));
     const recent = new Set(state.riksdag.bills.slice(0, 12).map((b) => b.billId));
-    const cands = BILLS.filter((b) => !recent.has(b.id) && stance(p, b) > .35);
+    const cands = BILLS.filter((b) => !recent.has(b.id) && stance(p, b) > .35 && !b.id.startsWith('utg_'));
     if (!cands.length) continue;
     const bill = weighted(rnd, cands, (b) => stance(p, b) * (p.profile?.[b.area] || 1) * (state.opinion.salience[b.area] || 1));
     out.push(proposeBill(state, rnd, p.id, bill.id));
@@ -145,7 +148,7 @@ export function aiProposals(state, rnd) {
 // Förhandling: vad kräver parti q för att rösta ja på spelarens förslag?
 export function negotiationDemand(state, rnd, q, item) {
   const me = state.parties[state.player.partyId];
-  const bill = BILL_BY_ID[item.billId];
+  const bill = itemBill(state, item);
   const st = stance(q, bill);
   const w = willingness(state, q, me);
   if (st < -.5 || w < -20) return { possible: false, reason: `${q.name} säger blankt nej – förslaget går tvärs emot deras politik.` };

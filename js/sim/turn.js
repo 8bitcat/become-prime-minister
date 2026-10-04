@@ -18,6 +18,7 @@ import { monthlyParty, installLeader, structureEffects, defaultStructure } from 
 import { weeklyMedia } from './media.js';
 import { updateTrust, checkPromises, setManifest } from './promises.js';
 import { IDEOLOGIES, IDEOLOGY_BY_ID } from '../data/ideologies.js';
+import { stepReforms, capitalRegen, aiGovernmentReforms, aiProgramDrift, syncAxes, programFromAxes, axesFromProgram, proposeReform, reformCost, POLICY_BY_ID, policyLabel, reformTitle } from './policy.js';
 
 const me = (s) => s.parties[s.player.partyId];
 const leader = (s) => s.people[me(s).leader];
@@ -41,12 +42,14 @@ export function endWeek(state, rnd) {
 
   // --- månadssteg ---
   if (newMonth) {
+    stepReforms(state, rnd);
+    capitalRegen(state);
     const notes = stepMonth(state, rnd);
     newsFromNotes(state, rnd, notes);
     updateSalience(state);
     stepWorld(state, rnd);
     state.riksdag.session = ![7, 8].includes(state.date.m); // sommaruppehåll
-    if (state.riksdag.session) aiProposals(state, rnd);
+    if (state.riksdag.session) { aiProposals(state, rnd); aiGovernmentReforms(state, rnd); }
     if (state.date.m === 10 && state.government.pmParty) {
       if (isPlayerPM(state)) queue(state, { type: 'budget' });
       else { const ch = aiBudget(state, rnd); if (ch?.length) addNews(state, { outlet: 'svt', headline: `Regeringens budget: ${ch[0].label.toLowerCase()}`, body: ch.map((c) => c.label).join(', ') + '. Oppositionen sågar budgeten.', tags: ['politik', 'ekonomi'], importance: 2 }); }
@@ -135,12 +138,14 @@ function aiPartyWeek(state, rnd) {
 function aiPartyMonth(state, rnd) {
   for (const q of activeParties(state)) {
     if (q.isPlayer) continue;
-    // glid mot de egna väljarnas ideal (viktat med hur många i gruppen som röstar på partiet)
+    // glid mot de egna väljarnas ideal – genom att nudga programmet (ideologin härleds ur politiken)
+    const delta = {};
     for (const is of ISSUES) {
       let ideal = 0, w = 0;
       for (const sg of SEGMENTS) { const sh = (state.opinion.seg[sg.id]?.[q.id] || 0) * sg.share; ideal += sg.ideal[is.id] * sh; w += sh; }
-      if (w) q.pos[is.id] = clamp(q.pos[is.id] + ((ideal / w) - q.pos[is.id]) * .015, -100, 100);
+      if (w) delta[is.id] = ((ideal / w) - q.pos[is.id]) * .015;
     }
+    if (q.program) aiProgramDrift(state, rnd, q, delta); else for (const k in delta) q.pos[k] = clamp(q.pos[k] + delta[k], -100, 100);
     const l = state.people[q.leader];
     if (l && (l.age >= 68 || l.approval < 20) && rnd() < .06) {
       l.role = 'mp';
@@ -185,7 +190,8 @@ export const ACTIONS = [
   { id: 'medlem', name: 'Medlemsvärvning', ic: '👥', ap: 1, desc: 'Kampanj för nya medlemmar. Fler medlemmar = mer pengar och starkare organisation.' },
   { id: 'insamling', name: 'Insamling', ic: '💰', ap: 1, desc: 'Ring givare och samla in pengar. Beloppet beror på medlemmar, uppmärksamhet och ledarens sociala förmåga.' },
   { id: 'org', name: 'Bygg organisationen', ic: '🏗️', ap: 1, money: (s) => 20000 + me(s).org * 3000, desc: 'Anställ, öppna lokalavdelningar, utbilda. Organisationen ger kraft i valrörelsen.' },
-  { id: 'program', name: 'Ändra partiprogrammet', ic: '📜', ap: 1, desc: 'Flytta partiets position i en fråga. Nya väljare kan lockas – men trovärdigheten tar stryk om ni vinglar.', needs: 'issue_shift' },
+  { id: 'program_policy', name: 'Ändra partiprogrammet', ic: '📜', ap: 1, desc: 'Ställ in partiets ståndpunkt i över hundra politikområden. Ideologin och axlarna räknas ut ur politiken. Många ändringar på en gång kostar trovärdighet.', needs: 'program' },
+  { id: 'reform', name: 'Föreslå reform', ic: '⚖️', ap: 1, desc: 'Föreslå att en lag ändras – skatter, migration, välfärd, försvar, vad som helst i politiken. Omröstning om tre veckor. Som statsminister kostar det politiskt kapital.', needs: 'reform', cond: (s) => me(s).inRiksdag && (s.riksdag.seats[me(s).id] || 0) > 0 && s.riksdag.session },
   { id: 'motion', name: 'Lägg fram lagförslag', ic: '🏛️', ap: 1, desc: 'Lägg en motion i riksdagen. Omröstning om tre veckor. Förhandla med andra partier för att få stöd.', needs: 'bill', cond: (s) => me(s).inRiksdag && (s.riksdag.seats[me(s).id] || 0) > 0 && s.riksdag.session },
   { id: 'forhandla', name: 'Förhandla om ett förslag', ic: '🤝', ap: 1, desc: 'Sök stöd från ett annat parti för ditt liggande förslag. De kommer att ställa krav.', needs: 'negotiate', cond: (s) => s.riksdag.bills.some((b) => b.status === 'pending' && b.byPlayer) },
   { id: 'samtal', name: 'Bygg relationer', ic: '☕', ap: 1, desc: 'Ät lunch med en annan partiledare. Bättre relationer gör samarbete och regeringsbildning möjlig.', needs: 'party' },
@@ -281,6 +287,27 @@ export function doAction(state, rnd, id, params = {}) {
       break;
     }
     case 'manifest': { setManifest(state, params.billIds || []); text = `Valmanifestet med ${(params.billIds || []).length} löften är presenterat.`; break; }
+    case 'reform': {
+      const pol = POLICY_BY_ID[params.policyId]; const to = params.to;
+      if (isPlayerPM(state)) { const cost = reformCost(pol, state.policy[pol.id], to); state.government.capital = Math.max(0, (state.government.capital ?? 50) - cost); }
+      const item = proposeReform(state, rnd, p.id, pol.id, to, { byPlayer: true });
+      att(4);
+      addNews(state, { outlet: pick(rnd, ['svt', 'dn', 'ekot']), headline: `${p.abbr} föreslår: ${reformTitle(pol, to).toLowerCase()}`, body: `${pol.desc || ''} Gällande lag: ${policyLabel(pol, state.policy[pol.id])}. Omröstning om tre veckor.`, tags: ['riksdag'], partyId: p.id, importance: 2 });
+      text = `Reformförslaget "${reformTitle(pol, to)}" är inlämnat (omröstning vecka ${item.voteWeek}).`;
+      break;
+    }
+    case 'program_policy': {
+      const changes = params.changes || {}; let nChanged = 0;
+      p.program ||= programFromAxes(p.pos);
+      for (const id in changes) { if (p.program[id] !== changes[id]) { p.program[id] = changes[id]; nChanged++; } }
+      syncAxes(p);
+      const cost = Math.min(6, nChanged * .6) * (p.inRiksdag ? 1.3 : 1);
+      p.credibility = clamp(p.credibility - cost, 0, 100); p.unity = clamp(p.unity - Math.min(5, nChanged * .4), 0, 100);
+      for (const f of p.factions || []) f.mood = clamp(f.mood - nChanged * .5, -100, 100);
+      if (nChanged >= 3) addNews(state, { outlet: pick(rnd, ['dn', 'svd', 'svt']), headline: `${p.abbr} skriver om partiprogrammet på ${nChanged} punkter`, body: `${pick(rnd, ['Kritiker talar om kappvändning.', 'Partiet säger sig lyssna på väljarna.', 'Gräsrötterna är delade.'])}`, tags: ['parti'], partyId: p.id, importance: 1 });
+      text = nChanged ? `${nChanged} punkter i programmet ändrade (trovärdighet −${cost.toFixed(1)}).` : 'Inga ändringar.';
+      break;
+    }
     case 'avga': {
       const next = state.people[params.successorId]; if (!next) { text = 'Ingen efterträdare vald.'; break; }
       installLeader(state, p, next, 'avgång'); state.player.leaderId = next.id; next.ambition = 80; next.loyalty = 99;

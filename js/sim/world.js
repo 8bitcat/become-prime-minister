@@ -2,6 +2,7 @@
 // handel. Månadsvis drift + kriser som matar in i Sveriges statistik.
 import { gauss, clamp, pick } from '../core/util.js';
 import { addNews } from './news.js';
+import { policyEffects } from './policy.js';
 
 export const COUNTRIES = [
   { id: 'usa', name: 'USA', flag: '🇺🇸', rel: 60, power: 100, trade: 8 },
@@ -32,9 +33,11 @@ export function stepWorld(state, rnd) {
   const w = state.world, s = state.sweden.stats;
   // relationer glider mot ett "naturligt" läge beroende på Sveriges politik
   const gov = state.government; const pos = gov.pmParty ? state.parties[gov.pmParty].pos : null;
+  const fx = policyEffects(state);
+  const relFx = { eu: fx.euRel, nato: fx.natoRel, usa: fx.usaRel, ryssland: fx.ryRel, kina: fx.kinaRel, fn: fx.fnRel, ukraina: fx.ukrRel };
   for (const c of COUNTRIES) {
     const R = w.countries[c.id];
-    let natural = c.rel;
+    let natural = c.rel + (relFx[c.id] || 0);
     if (pos) {
       if (c.id === 'eu') natural += pos.eu * .3;
       if (c.id === 'nato' || c.id === 'usa') natural += pos.forsvar * .2 - (s.forsvar_bnp < 2 ? 10 : 0);

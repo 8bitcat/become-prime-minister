@@ -5,6 +5,7 @@ import { RIKSDAG_SEATS, THRESHOLD } from '../data/parties.js';
 import { SEGMENTS } from '../data/segments.js';
 import { gauss, clamp, shuffle } from '../core/util.js';
 import { activeParties, regionalSupport } from './opinion.js';
+import { effectiveLaw, proposeReform } from './policy.js';
 
 export function sainteLague(votes, seats, { threshold = THRESHOLD, firstDivisor = 1.2 } = {}) {
   const tot = Object.values(votes).reduce((a, b) => a + b, 0) || 1;
@@ -62,7 +63,14 @@ export function computeElection(state, rnd) {
   let popT = 0;
   for (const r of REGIONS) { popT += r.pop; for (const p of parties) final[p.id] = (final[p.id] || 0) + regions[r.id].res[p.id] * r.pop; }
   for (const k in final) final[k] = final[k] / popT;
-  const seats = sainteLague(final, RIKSDAG_SEATS, { threshold: state.flags.threshold3 ? 3 : THRESHOLD });
+  const law = effectiveLaw(state);
+  const thr = state.flags.threshold3 ? 3 : (law.sparr ?? THRESHOLD);
+  let seats;
+  if (law.valsystem === 'majoritet') { // enmansvalkretsar: länets alla mandat till största partiet
+    seats = Object.fromEntries(parties.map((p) => [p.id, 0]));
+    let left = RIKSDAG_SEATS;
+    REGIONS.forEach((r, i) => { const nSeats = i === REGIONS.length - 1 ? left : Math.round((r.pop / REGIONS.reduce((a, x) => a + x.pop, 0)) * RIKSDAG_SEATS); left -= nSeats; const top = parties.map((p) => ({ p, v: regions[r.id].res[p.id] })).sort((a, b) => b.v - a.v)[0]; seats[top.p.id] += nSeats; });
+  } else seats = sainteLague(final, RIKSDAG_SEATS, { threshold: thr });
   const order = shuffle(rnd, REGIONS.map((r) => r.id)); // i vilken ordning länen "rapporterar"
   // kommun- och regionval samma dag: regionfullmäktige per län (3 %-spärr) + uppskattat antal kommuner med mandat
   const regionSeats = {}, kommuner = {};
@@ -100,7 +108,10 @@ export function applyElection(state, el) {
   (state.history ||= { leaders: [], timeline: [], bios: [] }).timeline.push({ date: { ...state.date }, week: state.week, kind: 'val', text: `Riksdagsval ${el.year}: ${activeParties(state).map((p) => ({ p, v: el.result[p.id] })).sort((a, b) => b.v - a.v).slice(0, 4).map((x) => `${x.p.abbr} ${x.v.toFixed(1).replace('.', ',')} %`).join(', ')}.` });
   // partier som inte nått någonstans på två val tynar bort
   for (const p of activeParties(state)) { if (p.isPlayer || p.inRiksdag) continue; const r = p.results.slice(-2); if (r.length === 2 && r.every((x) => x.pct < 1) && (p.localBase?.kommuner || 0) < 3) { p.active = false; p.dissolved = { ...state.date }; state.history.timeline.push({ date: { ...state.date }, week: state.week, kind: 'parti', text: `${p.name} läggs ned efter två misslyckade val.` }); } }
-  state.election.next = nextElectionDay(el.year + 4);
+  state.election.next = nextElectionDay(el.year + (effectiveLaw(state).mandatperiod || 4));
+  // vilande grundlagsändringar tas upp igen av den nya riksdagen
+  for (const v of state.riksdag.vilande || []) proposeReform(state, Math.random, v.proposer, v.policyId, v.to, { byPlayer: v.byPlayer, second: true });
+  state.riksdag.vilande = [];
   state.election.campaign = false;
   state.election.debatesDone = [];
   state.riksdag.record = {}; // nytt riksdagsår – gamla röster bleknar i debatterna

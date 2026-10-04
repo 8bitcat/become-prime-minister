@@ -192,6 +192,7 @@ export const STATS = [
   S('rattssakerhet', 'Rättssäkerhet', 'index', 0, 'samhalle', 88, 'up'),
   S('yttrandefrihet', 'Yttrandefrihet', 'index', 0, 'samhalle', 92, 'up'),
   S('civilsamhalle', 'Föreningsliv & civilsamhälle', 'index', 0, 'samhalle', 70, 'up'),
+  S('integritet', 'Personlig integritet', 'index', 0, 'samhalle', 75, 'up'),
 ];
 export const STAT_BY_ID = Object.fromEntries(STATS.map((s) => [s.id, s]));
 
