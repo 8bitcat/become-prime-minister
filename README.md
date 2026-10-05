@@ -60,8 +60,12 @@ Sparfilen kan exporteras/importeras som JSON från menyn.
   partikamrater och journalister off record (som kan läcka), fokusgrupper, ett politiskt minne av
   allt du sagt (motsägelser, framgrävda uttalanden), faktakoll, programförklaring och egen ideologi
   i egna ord, ministrar som protesterar eller avgår, ledamöter som bryter partilinjen, trötthet.
-- **Politiken som verktygssystem**: 132 områden i 14 domäner med gällande lag, partiprogram,
-  effekter, kostnad och genomförandetid. Ideologi och kompass härleds ur programmet. Reformer röstas i
+- **Politiken som verktygssystem**: 328 områden i 26 domäner med gällande lag, partiprogram,
+  effekter, kostnad och genomförandetid – från skatter, försvar och migration till barn & familj,
+  folkhälsa, kultur & medier, digitalisering, transporter, jordbruk & skog, natur, bank & konsument,
+  näringsliv, kommuner, krisberedskap och pensioner. 36 nya mätserier under Sverige (alkohol, fetma,
+  trafikdödade, självförsörjning, havsmiljö, skyddsrum, pensionärsfattigdom …) följer politiken.
+  Ideologi och kompass härleds ur programmet. Reformer röstas i
   riksdagen efter partiernas program, kostar politiskt kapital, genomförs med fördröjning, bromsas av
   myndigheternas kapacitet och kan få oavsiktliga konsekvenser. Grundlagsändringar kräver två beslut
   med val emellan. Lämna EU eller NATO, inför basinkomst, nationalisera, bygg 90 % kärnkraft.

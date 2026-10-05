@@ -89,7 +89,8 @@ export const KB_EMOTION = {
   concede: ['du har rätt', 'där hade vi fel', 'jag ger dig det', 'det var ett misstag från vår sida', 'jag erkänner att', 'vi kunde ha gjort bättre', 'okej, det medger jag', 'ja, det stämmer', 'jag håller med om kritiken', 'vi tar till oss det'],
 };
 
-const DOMAIN_ISSUE = { migration: 'migration', skatter: 'ekonomi', ekonomi: 'ekonomi', arbete: 'arbete', valfard: 'valfard', socialt: 'ekonomi', utbildning: 'valfard', ratt: 'kriminal', frihet: 'varderingar', demokrati: 'varderingar', forsvar: 'forsvar', utrikes: 'eu', energi: 'energi', samhalle: 'bostad' };
+const DOMAIN_ISSUE = { migration: 'migration', skatter: 'ekonomi', ekonomi: 'ekonomi', arbete: 'arbete', valfard: 'valfard', socialt: 'ekonomi', utbildning: 'valfard', ratt: 'kriminal', frihet: 'varderingar', demokrati: 'varderingar', forsvar: 'forsvar', utrikes: 'eu', energi: 'energi', samhalle: 'bostad',
+  familj: 'varderingar', halsa: 'valfard', kultur: 'varderingar', digitalt: 'ekonomi', transport: 'landsbygd', areella: 'landsbygd', natur: 'klimat', finans: 'ekonomi', naring: 'ekonomi', kommun: 'landsbygd', kris: 'forsvar', pension: 'valfard' };
 const CAT_ISSUE = { ekonomi: 'ekonomi', offentligt: 'ekonomi', skatter: 'ekonomi', utgifter: 'ekonomi', arbete: 'arbete', valfard: 'valfard', brott: 'kriminal', klimat: 'klimat', forsvar: 'forsvar', bostad: 'bostad', samhalle: 'varderingar' };
 
 // Alla poster i ett platt register: { t, kind: 'issue'|'tone'|'emo', issue?, dir?, tone?, emo? }
