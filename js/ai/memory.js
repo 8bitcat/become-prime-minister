@@ -22,7 +22,7 @@ export function recordStatement(state, text, kind, { question = null, questionIs
   const s = { id: 'st' + state.week + '_' + Math.floor(Math.random() * 1e6).toString(36), week: state.week, date: { ...state.date }, kind, audience, text: text.slice(0, 600), question, dominant: a.dominant, tone: a.tone, clarity: a.clarity, answers: a.answers, issues: Object.keys(a.issues || {}), stance: a.stance, promises: a.promises, claims: a.claims, attacks: a.attacks, risky: a.risky, contradictions: contradictions.map((c) => c.text), summary: a.summary || null, deleted: false, resurfaced: false };
   mem.statements.push(s); if (mem.statements.length > 400) mem.statements.shift();
   // personan: glidande medel
-  const P = mem.persona; P.n++; for (const k of ['saklig', 'kampande', 'aggressiv', 'humor', 'kansla', 'undvikande']) P[k] = P[k] * .9 + (a.dominant === k ? 1 : 0) * .1;
+  const P = mem.persona; P.n++; for (const k of ['saklig', 'kampande', 'aggressiv', 'humor', 'kansla', 'undvikande', 'dryg']) P[k] = (P[k] ?? 0) * .9 + (a.dominant === k ? 1 : k === 'dryg' ? (a.dryg || 0) * .8 : 0) * .1;
   // löften med siffror sparas för löfteskollen
   for (const pr of a.promises || []) if (pr.number != null || pr.absolute) mem.promises.push({ id: s.id, text: pr.text, number: pr.number, unit: pr.unit, issue: pr.issue, week: state.week, year: state.date.y, kind, absolute: !!pr.absolute, checked: null, stat: promiseStat(pr), baseline: promiseStat(pr) ? state.sweden.stats[promiseStat(pr)] : null });
   return { analysis: a, statement: s, contradictions: contradictions.map((c) => c.text) };

@@ -49,6 +49,18 @@ ok(!a.promises.some((p) => p.unit === 'år'), 'analys: "under 30 år" är en ål
 a = analyzeText('Kära vänner! Ni är inte bortglömda. Vi lovar 3 miljarder till vägarna här uppe. Tack.', ctx);
 ok(a.promises.length === 1 && a.promises[0].text.startsWith('Vi lovar 3 miljarder'), `analys: löftestexten är hela meningen ("${a.promises[0]?.text}")`);
 
+// --- v0.5: fria formuleringar, känslor, dryghet, räkneord ---
+a = analyzeText('Folk har inte råd med maten längre, priserna skenar.', ctx); ok(a.topics[0] === 'ekonomi', 'förståelse: "inte råd med maten" = ekonomi');
+a = analyzeText('Mormor fick vänta i åtta timmar på akuten.', ctx); ok(a.topics[0] === 'valfard', 'förståelse: "mormor på akuten" = vård');
+a = analyzeText('Vi måste ta hand om planeten för våra barnbarn.', ctx); ok(a.topics.includes('klimat') && a.stance.klimat < 0, 'förståelse: "planeten" = klimat, grön riktning');
+a = analyzeText('Stäng gränsen nu, vi har tagit emot för många.', ctx); ok(a.topics[0] === 'migration' && a.stance.migration > 0, 'förståelse: "stäng gränsen" = stram migration');
+a = analyzeText('Vi lovar femtiotusen nya bostäder och tio procent lägre skatt.', ctx); ok(a.promises.some((p) => p.number === 50000) && a.promises.some((p) => p.number === 10), 'räkneord: femtiotusen och tio procent');
+a = analyzeText('Du är en idiot och en lögnare!!! Skäms!', { ...ctx, opponentPartyId: 's' }); ok(a.emotion.insult > .6 && a.intensity > 0 && a.attacks.includes('s'), `känsla: förolämpning (insult ${a.emotion.insult}, intensitet ${a.intensity})`);
+a = analyzeText('Haha, var det allt? Patetiskt försök.', ctx); ok(a.emotion.mock > .6, 'känsla: hån');
+a = analyzeText('Det är en bra poäng, jag håller med dig och respekterar dig.', ctx); ok(a.emotion.praise > .5 && a.dominant !== 'aggressiv', 'känsla: beröm (och inte konfrontativ)');
+a = analyzeText('Som alla begriper förstår du inte det här, lilla vän. Läs på.', ctx); ok(a.dryg > .5 && a.dominant === 'dryg', 'attityd: dryg');
+const { moodDelta, applyMoodTo, moodLabel, moodEffects, blankMood } = await import('../js/sim/emotion.js');
+{ const m = blankMood(); applyMoodTo(m, moodDelta(analyzeText('Du är en idiot och en lögnare!!! Skäms!', ctx), { ok: true }), { lugn: 30, aggressivitet: 70 }); ok(m.anger > 35 && moodLabel(m).key === 'anger', `humör: förolämpning gör motståndaren arg (${moodLabel(m).label}, ${m.anger.toFixed(0)})`); const m2 = blankMood(); applyMoodTo(m2, moodDelta(analyzeText('Det var klokt sagt, jag respekterar dig verkligen.', ctx), { ok: false }), { lugn: 50 }); ok(m2.joy > 10 && moodLabel(m2).key === 'joy', `humör: beröm gör motståndaren glad (${m2.joy.toFixed(0)})`); const m3 = blankMood(); m3.anger = 90; let ob = 0; for (let i = 0; i < 40; i++) if (moodEffects(m3, rnd).outburst) ob++; ok(ob > 5, `humör: rasande motståndare får utbrott (${ob}/40)`); }
 // --- manifestet registrerades vid start ---
 ok(state.memory.statements.length === 1 && state.memory.statements[0].kind === 'program', 'programförklaringen sparades i minnet');
 ok(state.memory.promises.length >= 1 && state.memory.promises.some((p) => p.number === 100000), 'manifestets löfte med siffra sparades');
@@ -162,6 +174,9 @@ ok(tp.length >= 1 && tp.every((p) => p.checked), `löfteskoll: ${tp.length} frit
 state.date.y -= 4;
 const mm = monthlyMinisters(state, rnd); ok(Array.isArray(mm), 'ministrar: månadssteget körs');
 
+// --- v0.5: följare växer med opinionen, personligheten formas av beteendet ---
+{ const { driftTraits } = await import('../js/sim/drift.js'); for (let i = 0; i < 12; i++) recordStatement(state, 'Ni ljuger och sviker Sverige! Skäms! Katastrof! Idioter!', 'post'); const before = l.traits.aggressivitet; const line = driftTraits(state, rnd); ok(l.traits.aggressivitet > before && typeof line === 'string', `drift: ofta aggressiv → aggressivitet ${before.toFixed(1)} → ${l.traits.aggressivitet.toFixed(1)}`); for (let i = 0; i < 12; i++) recordStatement(state, 'Som alla begriper förstår du inte det här, lilla vän. Läs på innan du uttalar dig.', 'post'); const kar = l.traits.karisma; driftTraits(state, rnd); ok(l.traits.karisma < kar, `drift: ofta dryg → karisma ${kar.toFixed(1)} → ${l.traits.karisma.toFixed(1)}`); }
+{ const { weeklySocial } = await import('../js/sim/social.js'); const f0 = state.social.followers[l.id].x; state.opinion.support[me.id] = 12; state.opinion.awareness[me.id] = 1; for (let i = 0; i < 20; i++) weeklySocial(state, rnd); ok(state.social.followers[l.id].x > f0 * 3, `följare: växer med opinionen (${f0} → ${state.social.followers[l.id].x})`); }
 // --- några veckor med allt på ---
 let errors = 0;
 for (let w = 0; w < 30; w++) { try { endWeek(state, rnd); state.queue.length = 0; } catch (e) { errors++; console.error(e.stack); break; } }

@@ -42,8 +42,10 @@ export async function askJSON(prompt, schema, { maxTokens = 1500, effort = 'low'
 export const ANALYSIS_SCHEMA = {
   type: 'object', additionalProperties: false,
   properties: {
-    dominant: { type: 'string', enum: ['saklig', 'kampande', 'aggressiv', 'humor', 'kansla', 'undvikande'] },
+    dominant: { type: 'string', enum: ['saklig', 'kampande', 'aggressiv', 'humor', 'kansla', 'undvikande', 'dryg'] },
     clarity: { type: 'number' }, answers: { type: 'number' }, vague: { type: 'boolean' }, risky: { type: 'integer' },
+    emotion: { type: 'object', additionalProperties: false, properties: { insult: { type: 'number' }, mock: { type: 'number' }, praise: { type: 'number' }, empathy: { type: 'number' }, threat: { type: 'number' }, concede: { type: 'number' } }, required: ['insult', 'mock', 'praise', 'empathy', 'threat', 'concede'] },
+    intensity: { type: 'number' }, dryg: { type: 'number' },
     issues: { type: 'array', items: { type: 'string' } },
     stance: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { issue: { type: 'string' }, dir: { type: 'number' } }, required: ['issue', 'dir'] } },
     promises: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' }, number: { type: ['number', 'null'] }, unit: { type: ['string', 'null'] }, issue: { type: ['string', 'null'] }, absolute: { type: 'boolean' } }, required: ['text', 'number', 'unit', 'issue', 'absolute'] } },
@@ -52,7 +54,7 @@ export const ANALYSIS_SCHEMA = {
     contradiction: { type: ['string', 'null'] },
     summary: { type: 'string' },
   },
-  required: ['dominant', 'clarity', 'answers', 'vague', 'risky', 'issues', 'stance', 'promises', 'claims', 'attacks', 'contradiction', 'summary'],
+  required: ['dominant', 'clarity', 'answers', 'vague', 'risky', 'emotion', 'intensity', 'dryg', 'issues', 'stance', 'promises', 'claims', 'attacks', 'contradiction', 'summary'],
 };
 export async function llmAnalyze(text, ctx) {
   const prompt = `Analysera partiledarens text. Kontext:
@@ -66,7 +68,9 @@ ${ctx.history ? `- Tidigare uttalanden av samma person (för motsägelser): ${ct
 Texten:
 """${text}"""
 
-Returnera: dominant ton; clarity 0–1; answers 0–1 (hur väl frågan besvaras, 0.5 om ingen fråga); vague; risky 0–100 (risk att det landar fel/skapar skandal); issues (axel-id:n som berörs); stance (axel-id + dir −1 vänster…+1 höger); promises (konkreta löften med siffra om sådan finns, absolute=true vid "aldrig/alltid"); claims (faktapåståenden om statistik i listan, med stat-id och påstått värde); attacks (parti-id som angrips); contradiction (kort text om texten motsäger tidigare uttalanden, annars null); summary (en mening som en journalist skulle sammanfatta det med).`;
+${ctx.counterpart ? `- Texten riktas till: ${ctx.counterpart}` : ''}
+
+Returnera: dominant ton (saklig|kampande|aggressiv|humor|kansla|undvikande|dryg – "dryg" = nedlåtande/överlägsen); clarity 0–1; answers 0–1 (hur väl frågan besvaras, 0.5 om ingen fråga); vague; risky 0–100 (risk att det landar fel/skapar skandal); emotion (0–1 var: insult = förolämpar motparten, mock = hånar, praise = berömmer, empathy = visar empati, threat = hotar, concede = ger motparten rätt); intensity 0–1 (hur upprört/skrikigt); dryg 0–1; issues (axel-id:n som berörs – tolka fritt: "folk har inte råd med maten" = ekonomi, "mormor väntade på akuten" = valfard); stance (axel-id + dir −1 vänster…+1 höger, utifrån vad texten faktiskt vill); promises (konkreta löften med siffra om sådan finns, absolute=true vid "aldrig/alltid"); claims (faktapåståenden om statistik i listan, med stat-id och påstått värde); attacks (parti-id som angrips); contradiction (kort text om texten motsäger tidigare uttalanden, annars null); summary (en mening som en journalist skulle sammanfatta det med).`;
   return askJSON(prompt, ANALYSIS_SCHEMA, { maxTokens: 1200 });
 }
 

@@ -4,7 +4,8 @@ import { ISSUE_BY_ID, ISSUES } from '../data/issues.js';
 import { SEGMENTS } from '../data/segments.js';
 import { pick, fmt, clamp } from '../core/util.js';
 import { llmEnabled, llmReplies, llmText, llmAnalyze } from './llm.js';
-import { analyzeText } from './analyze.js';
+import { analyzeText, splitSentences } from './analyze.js';
+import { smartEnabled, smartReady, loadSmart, embedHits } from './embed.js';
 import { ideologyLabel } from '../data/ideologies.js';
 import { STAT_BY_ID } from '../data/stats.js';
 
@@ -68,10 +69,10 @@ export async function followUp(state, rnd, { question, answer, analysis, journal
 }
 
 // ---- motståndarens svar i en debatt ----
-export async function opponentReply(state, rnd, { opponentParty, opponent, playerText, analysis, issue, statement }) {
+export async function opponentReply(state, rnd, { opponentParty, opponent, playerText, analysis, issue, statement, mood = null, moodRaw = null }) {
   const p = me(state); const l = state.people[p.leader];
   const is = ISSUE_BY_ID[issue];
-  if (llmEnabled()) { try { const r = await llmReplies({ situation: `TV-debatt om ${is?.name.toLowerCase()}. ${opponent.name} (${opponentParty.abbr}, ${ideologyLabel(opponentParty.ideology?.primary, opponentParty.ideology?.secondary)}) sa nyss: "${statement}". Partiledaren svarade. ${analysis.contradiction ? 'Svaret motsäger partiledarens tidigare linje: ' + analysis.contradiction : ''} ${analysis.claims?.some((c) => c.ok === false) ? 'Svaret innehöll en felaktig siffra som motståndaren kan påpeka.' : ''}`, playerText, playerName: l.name, abbr: p.abbr, speakers: [{ who: opponent.name, desc: `partiledare för ${opponentParty.name}; ${opponent.persona?.personality?.join(', ') || 'rutinerad'}; svarar skarpt men politiskt, max 3 meningar, kan ställa en motfråga` }], count: 1 }); return r[0]?.text; } catch (e) { console.warn('LLM', e.message); } }
+  if (llmEnabled()) { try { const m = mood ? `${opponent.first || opponent.name} är just nu ${mood.label} (${mood.emoji}, ilska ${Math.round(moodRaw?.anger || 0)}, glädje ${Math.round(moodRaw?.joy || 0)}, nedstämdhet ${Math.round(moodRaw?.sad || 0)}, nervositet ${Math.round(moodRaw?.fear || 0)} av 100) – låt det färga repliken tydligt.` : ''; const r = await llmReplies({ situation: `TV-debatt om ${is?.name.toLowerCase()}. ${opponent.name} (${opponentParty.abbr}, ${ideologyLabel(opponentParty.ideology?.primary, opponentParty.ideology?.secondary)}) sa nyss: "${statement}". Partiledaren svarade. ${analysis.contradiction ? 'Svaret motsäger partiledarens tidigare linje: ' + analysis.contradiction : ''} ${analysis.claims?.some((c) => c.ok === false) ? 'Svaret innehöll en felaktig siffra som motståndaren kan påpeka.' : ''} ${m}`, playerText, playerName: l.name, abbr: p.abbr, speakers: [{ who: opponent.name, desc: `partiledare för ${opponentParty.name}; ${opponent.persona?.personality?.join(', ') || 'rutinerad'}; svarar skarpt men politiskt, max 3 meningar, kan ställa en motfråga${mood?.level >= 3 ? '; är så upprörd/berörd att det syns' : ''}` }], count: 1 }); return r[0]?.text; } catch (e) { console.warn('LLM', e.message); } }
   if (analysis.claims?.some((c) => c.ok === false)) { const c = analysis.claims.find((x) => x.ok === false); return `Nej. ${STAT_BY_ID[c.stat]?.name || 'Siffran'} är ${fmt(c.actual, STAT_BY_ID[c.stat]?.d ?? 1)}, inte ${fmt(c.value)}. Om ni inte ens kan siffrorna, hur ska ni styra landet?`; }
   if (analysis.contradictions?.length || analysis.contradiction) return pick(rnd, ['Det där är inte vad ni sa för ett år sedan. Vilken linje gäller egentligen?', 'Ni byter fot i den här frågan varje gång det blåser.', 'Väljarna hör att ni säger en sak i dag och en annan i morgon.']);
   if (analysis.dominant === 'aggressiv') return pick(rnd, ['Jag tänker inte sänka mig till den nivån.', 'Personangrepp är det enda ni har när argumenten tar slut.', `Lågt, ${l.first}. Riktigt lågt.`]);
@@ -106,16 +107,21 @@ export async function negotiationReply(state, rnd, { party, playerText, analysis
 }
 
 // ---- analys med Claude om det är påslaget, annars regelbaserad ----
-export async function analyze(state, text, { question = null, questionIssue = null } = {}) {
+export async function analyze(state, text, { question = null, questionIssue = null, opponentPartyId = null, counterpart = null } = {}) {
   const p = me(state); const l = state.people[p.leader];
-  const ctx = { stats: state.sweden.stats, parties: Object.values(state.parties).filter((q) => q.active !== false && !q.isPlayer), people: Object.values(state.people).filter((x) => x.role === 'leader' || x.role === 'minister').slice(0, 40), question, questionIssue };
+  const ctx = { stats: state.sweden.stats, parties: Object.values(state.parties).filter((q) => q.active !== false && !q.isPlayer), people: Object.values(state.people).filter((x) => x.role === 'leader' || x.role === 'minister').slice(0, 40), question, questionIssue, opponentPartyId };
+  // smart analys på enheten: semantiska träffar mening för mening (om spelaren slagit på det och modellen är laddad)
+  if (smartEnabled()) { try { if (!smartReady()) loadSmart().catch(() => {}); else ctx.extraHits = await embedHits(splitSentences(text)); } catch (e) { console.warn('smart analys', e.message); } }
   const base = analyzeText(text, ctx);
   if (!llmEnabled()) return base;
   try {
     const hist = (state.memory?.statements || []).slice(-8).map((s) => `v${s.week} (${s.kind}): "${s.text.slice(0, 120)}"`).join('\n');
-    const r = await llmAnalyze(text, { partyName: p.name, abbr: p.abbr, ideology: ideologyLabel(p.ideology?.primary, p.ideology?.secondary), issueList: ISSUES.map((i) => `${i.id}: ${i.name} (−100 ${i.left} … +100 ${i.right})`).join('; '), partyList: Object.values(state.parties).filter((q) => q.active !== false).map((q) => `${q.id}: ${q.name}`).join(', '), statList: ['arbetsloshet', 'inflation', 'bnp_tillvaxt', 'statsskuld_bnp', 'skjutningar', 'vardkoer', 'elpris', 'asylsokande', 'utslapp', 'poliser', 'styrranta', 'medianlon', 'byggstarter', 'dodligt_vald'].map((id) => `${id}=${fmt(state.sweden.stats[id], STAT_BY_ID[id].d)} ${STAT_BY_ID[id].unit}`).join(', '), question, history: hist });
-    const merged = { ...base, dominant: r.dominant, clarity: r.clarity, answers: question ? r.answers : base.answers, vague: r.vague, risky: r.risky, summary: r.summary, contradiction: r.contradiction, llm: true };
+    const r = await llmAnalyze(text, { partyName: p.name, abbr: p.abbr, ideology: ideologyLabel(p.ideology?.primary, p.ideology?.secondary), issueList: ISSUES.map((i) => `${i.id}: ${i.name} (−100 ${i.left} … +100 ${i.right})`).join('; '), partyList: Object.values(state.parties).filter((q) => q.active !== false).map((q) => `${q.id}: ${q.name}`).join(', '), statList: ['arbetsloshet', 'inflation', 'bnp_tillvaxt', 'statsskuld_bnp', 'skjutningar', 'vardkoer', 'elpris', 'asylsokande', 'utslapp', 'poliser', 'styrranta', 'medianlon', 'byggstarter', 'dodligt_vald'].map((id) => `${id}=${fmt(state.sweden.stats[id], STAT_BY_ID[id].d)} ${STAT_BY_ID[id].unit}`).join(', '), question, history: hist, counterpart });
+    const merged = { ...base, dominant: r.dominant, clarity: r.clarity, answers: question ? r.answers : base.answers, vague: r.vague, risky: r.risky, summary: r.summary, contradiction: r.contradiction, llm: true, intensity: Math.max(base.intensity, clamp(r.intensity || 0, 0, 1)), dryg: Math.max(base.dryg, clamp(r.dryg || 0, 0, 1)) };
+    if (r.emotion) for (const k in merged.emotion) merged.emotion[k] = Math.max(merged.emotion[k], clamp(r.emotion[k] || 0, 0, 1));
+    merged.tone = { ...base.tone, [r.dominant]: Math.max(base.tone[r.dominant] || 0, .5) };
     for (const id of r.issues || []) if (ISSUE_BY_ID[id]) merged.issues[id] = Math.max(merged.issues[id] || 0, 1);
+    merged.topics = Object.entries(merged.issues).sort((a, b) => b[1] - a[1]).map(([id]) => id);
     for (const s of r.stance || []) if (ISSUE_BY_ID[s.issue]) merged.stance[s.issue] = clamp(s.dir, -1, 1);
     merged.promises = (r.promises || []).map((x) => ({ ...x, issue: ISSUE_BY_ID[x.issue] ? x.issue : null }));
     merged.claims = (r.claims || []).map((c) => { const actual = state.sweden.stats[c.stat]; const st = STAT_BY_ID[c.stat]; return st ? { stat: c.stat, name: st.name, value: c.value, actual, ok: actual == null ? null : Math.abs(c.value - actual) <= Math.max(Math.abs(actual) * .15, st.d === 0 ? 1 : .3) } : null; }).filter(Boolean);

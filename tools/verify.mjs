@@ -33,6 +33,7 @@ try {
   const c1 = await run(['tools/text-test.mjs']); if (c1) code = code || c1;
   const c2 = await run(['tools/smoke.mjs']); if (c2) code = code || c2;
   const c3 = await run(['tools/val-test.mjs']); if (c3) code = code || c3;
+  const c4 = await run(['tools/ui-test.mjs']); if (c4) code = code || c4;
   const log = out.join('');
   const logFile = path.join(ROOT, 'tools/out', `verify-${ref.replace(/[^\w.-]/g, '_')}.log`);
   fs.mkdirSync(path.dirname(logFile), { recursive: true }); fs.writeFileSync(logFile, log);

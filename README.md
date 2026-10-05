@@ -14,9 +14,18 @@ utspel, förhandlingsbud, erbjudanden i regeringsbildningen och enskilda samtal 
 text. Spelet läser vad du faktiskt skrev (ton, sakfrågor, om du svarar på frågan, löften med
 siffror, faktapåståenden, angrepp, motsägelser mot vad du sagt förr) och låter världen reagera:
 kommentarsfält, följdfrågor, avbrott, faktakoll, läckor, framgrävda uttalanden och löfteskoll.
-Analysen är inbyggd och fungerar utan nätverk. Lägger du in en egen Anthropic-nyckel under
-☰ Meny → AI-läge läser **Claude** dina texter i stället och skriver journalisternas,
-motståndarnas och väljarnas repliker. Nyckeln stannar i din webbläsare.
+Analysen är inbyggd och fungerar utan nätverk: en kunskapsbas med över 1 300 svenska
+formuleringar matchas mening för mening (böjningar, stavfel och fria formuleringar fångas).
+Under ☰ Meny → AI-läge kan du dessutom slå på **smart analys på enheten** (en liten
+språkmodell, ~118 MB, laddas en gång och körs lokalt – utan nyckel och utan kostnad) eller
+lägga in en egen Anthropic-nyckel så att **Claude** läser dina texter och skriver
+journalisternas, motståndarnas och väljarnas repliker. Nyckeln stannar i din webbläsare.
+
+**Tänk på vad du säger.** Motståndare och journalister blir arga, ledsna, glada eller nervösa
+av det du skriver – i vilken grad som helst. Det syns på figuren, färgar replikerna (utbrott,
+sammanbrott, medgivanden), påverkar publiken och följer med ut som agg, relationer och
+rubriker. Och ditt eget beteende formar dig: ofta aggressiv → aggressiviteten stiger, ofta
+dryg → karisman faller.
 
 ## Spela
 
@@ -39,8 +48,9 @@ Sparfilen kan exporteras/importeras som JSON från menyn.
   färger, ansiktsdetaljer, stil, röst, kroppsspråk, 40 yrken med trovärdighet i sakfrågor, politisk
   erfarenhet, familj, livsåskådning, personlighetsdrag och offentlig image (äkthet). Tio egenskaper
   styr debatter, kriser, förhandlingar och skandalrisk. Ett galleri med 40 tecknade figurer
-  (genererade karaktärsark i sex poser, `assets/chars/`) väljs ur eller matchas mot utseendet;
-  SVG-dockan är reserv.
+  (genererade karaktärsark i sex poser, `assets/chars/`) väljs ur eller matchas mot utseendet,
+  och figuren anpassas i webbläsaren: hårfärg, hudton, kläder, skjorta och detaljer färgas om
+  med skuggningen bevarad. Egen logotypbild från mobilen eller datorn. SVG-dockan är reserv.
 - **Fri text överallt**: inlägg med levande kommentarsfält (väljare, motståndare, journalister,
   influerare – och du kan svara, radera eller rätta dig), debatter där du skriver svaret och
   journalister ställer följdfrågor när du inte svarar, motståndare som avbryter och kan ha fel
@@ -93,6 +103,8 @@ node tools/text-test.mjs         # fritextlagret: analys, minne, debattsvar, tal
 node tools/shot.mjs "tools/portrait-preview.html?seed=7" tools/out/p.png   # figurgalleri
 node tools/comfy-chars.mjs       # generera karaktärsark med Z-Image Turbo i ComfyUI (127.0.0.1:8188)
 python tools/slice-chars.py      # skiva arken till assets/chars/<id>/<pose>.webp + manifest.json
+python tools/mask-chars.py       # segmentera figurerna i färgbara delar (labels-<pose>.png + färger i manifestet)
+node tools/embed-kb.mjs          # förberäkna kunskapsbasens inbäddningar (kräver npm i i tools/embed)
 ```
 
 Släpp: `node tools/release.mjs minor --title "…" --scope … --notes n.md -- <filer>` →

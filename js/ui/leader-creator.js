@@ -6,7 +6,8 @@ import { PROFESSIONS, EXPERIENCE, PERSONALITY, PERSONALITY_BY_ID, MAX_PERSONALIT
 import { ISSUE_BY_ID } from '../data/issues.js';
 import { TRAITS, TRAIT_POINTS, HAIR_STYLES, HAIR_COLORS, SKIN_TONES, EYE_COLORS, EYE_SHAPES, NOSES, BODIES, FACES, BROWS, MOUTHS, OUTFITS, JACKET_COLORS, SHIRT_COLORS, TIE_COLORS, GLASSES, BEARDS, randomLook, randomPersona, applyPersona, traitLabel, fixLook } from '../sim/people.js';
 import { EXPRESSIONS, POSES } from '../art/character.js';
-import { characterArt, spriteList, spriteFaceUrl, spritesReady, pickSprite } from '../art/sprites.js';
+import { characterArt, spriteList, spriteFaceUrl, spritesReady, pickSprite, spriteById } from '../art/sprites.js';
+import { PARTS, prepareLook, hasCustomLook } from '../art/recolor.js';
 const characterSVG = (p, o) => characterArt({ ...p, id: 'draft', sprite: p.sprite === 'auto' || !p.sprite ? undefined : p.sprite }, o);
 
 export function blankLeader(rnd, gender = 'k') {
@@ -23,7 +24,8 @@ export function renderLeaderCreator(container, L, { rnd, tab = 'person' } = {}) 
   const port = h('div', { class: 'panel' });
   port.innerHTML = `<h3>Porträtt</h3><div class="portrait" id="portrait"></div><div class="row" style="margin-top:8px"><select id="expr">${EXPRESSIONS.map((e) => `<option value="${e}">${e}</option>`).join('')}</select><select id="pose">${POSES.map((p) => `<option value="${p}">${p}</option>`).join('')}</select><button class="btn sm" id="randLook">🎲 Utseende</button></div>
     <div class="help" style="margin-top:10px" id="personaHint"></div>`;
-  const drawPortrait = () => { port.querySelector('#portrait').innerHTML = characterSVG({ look: L.look, age: L.age, gender: L.gender, sprite: L.sprite }, { expr: port.querySelector('#expr').value, pose: port.querySelector('#pose').value, id: 'setup' }); port.querySelector('#personaHint').innerHTML = personaHint(L); };
+  const drawPortrait = () => { port.querySelector('#portrait').innerHTML = characterSVG({ look: L.look, age: L.age, gender: L.gender, sprite: L.sprite, spriteLook: L.spriteLook }, { expr: port.querySelector('#expr').value, pose: port.querySelector('#pose').value, id: 'setup' }); port.querySelector('#personaHint').innerHTML = personaHint(L); };
+  document.addEventListener('bpm:sprites', drawPortrait);
   port.querySelector('#expr').addEventListener('change', drawPortrait); port.querySelector('#pose').addEventListener('change', drawPortrait);
   port.querySelector('#randLook').addEventListener('click', () => { L.look = randomLook(rnd, L.gender, { age: L.age, style: L.persona.style }); renderLeaderCreator(container, L, { rnd, tab: current }); });
 
@@ -52,7 +54,8 @@ export function renderLeaderCreator(container, L, { rnd, tab = 'person' } = {}) 
     q('#expHint').textContent = EXPERIENCE.find((e) => e.id === L.persona.experience)?.desc || '';
   } else if (current === 'utseende') {
     body.innerHTML = `
-      ${spritesReady() ? `<div class="field"><label>Tecknad figur <small class="muted">– välj en ur galleriet, eller låt spelet välja den som liknar ditt utseende nedan</small></label><div class="chips" id="spriteMode"><span class="chip ${L.sprite === 'auto' || !L.sprite ? 'on' : ''}" data-v="auto">Närmast mitt utseende</span><span class="chip ${L.sprite === 'svg' ? 'on' : ''}" data-v="svg">Bara den ritade dockan</span></div><div class="gallery" id="gallery"></div></div>` : ''}
+      ${spritesReady() ? `<div class="field"><label>Tecknad figur <small class="muted">– välj en ur galleriet, eller låt spelet välja den som liknar ditt utseende nedan</small></label><div class="chips" id="spriteMode"><span class="chip ${L.sprite === 'auto' || !L.sprite ? 'on' : ''}" data-v="auto">Närmast mitt utseende</span><span class="chip ${L.sprite === 'svg' ? 'on' : ''}" data-v="svg">Bara den ritade dockan</span></div><div class="gallery" id="gallery"></div></div>
+      <div class="field" id="customize"><label>Anpassa figuren <small class="muted">– bestäm själv hårfärg, hudton och kläder på den tecknade figuren (skuggningen behålls)</small></label><div class="parts" id="parts"></div><button class="btn sm" id="resetLook" style="margin-top:4px">Figurens egna färger</button></div>` : ''}
       <div class="field"><label>Frisyr</label><div class="chips" id="hair"></div></div>
       <div class="field"><label>Hårfärg</label><div class="swatches" id="hairc"></div></div>
       <div class="field"><label>Hudton</label><div class="swatches" id="skin"></div></div>
@@ -68,7 +71,26 @@ export function renderLeaderCreator(container, L, { rnd, tab = 'person' } = {}) 
       const autoId = pickSprite({ look: L.look, age: L.age, gender: L.gender, id: 'draft' });
       const drawGal = () => { gal.innerHTML = ''; for (const c of spriteList().filter((x) => L.gender === 'x' || x.gender === L.gender)) { const g = h('div', { class: 'g ' + (L.sprite === c.id || ((L.sprite === 'auto' || !L.sprite) && c.id === autoId) ? 'on' : ''), title: `${c.age} år`, onclick: () => { L.sprite = c.id; q('#spriteMode').querySelectorAll('.chip').forEach((x) => x.classList.remove('on')); drawGal(); drawPortrait(); } }); g.innerHTML = `<img src="${spriteFaceUrl(c.id)}" alt="" loading="lazy">`; gal.append(g); } };
       drawGal();
-      q('#spriteMode').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; L.sprite = c.dataset.v; q('#spriteMode').querySelectorAll('.chip').forEach((x) => x.classList.toggle('on', x === c)); drawGal(); drawPortrait(); });
+      // anpassningen: färga om delar av den valda (eller auto-matchade) figuren
+      const LISTS = { hair: HAIR_COLORS, skin: SKIN_TONES, jacket: JACKET_COLORS, shirt: SHIRT_COLORS, accent: TIE_COLORS };
+      const currentSprite = () => (L.sprite === 'svg' ? null : L.sprite && L.sprite !== 'auto' ? L.sprite : autoId);
+      const applyLook = () => { const id = currentSprite(); if (!id) return drawPortrait(); prepareLook(id, L.spriteLook).then(drawPortrait).catch(drawPortrait); drawPortrait(); };
+      const drawParts = () => {
+        const id = currentSprite(); const sp = id ? spriteById(id) : null; const box = q('#customize'); const parts = q('#parts');
+        if (!sp?.colors) { box.style.display = 'none'; return; }
+        box.style.display = ''; parts.innerHTML = ''; L.spriteLook ||= {};
+        for (const [part, name] of PARTS) {
+          if (!sp.colors[part]) continue;
+          const row = h('div', { class: 'prow' }); row.append(h('span', {}, name));
+          const orig = h('span', { class: 'swatch orig ' + (!L.spriteLook[part] ? 'on' : ''), title: 'Figurens egen färg', onclick: () => { delete L.spriteLook[part]; drawParts(); applyLook(); } }); row.append(orig);
+          for (const c of LISTS[part]) row.append(h('span', { class: 'swatch ' + (L.spriteLook[part] === c ? 'on' : ''), style: `background:${c}`, onclick: () => { L.spriteLook[part] = c; drawParts(); applyLook(); } }));
+          parts.append(row);
+        }
+      };
+      drawParts();
+      q('#resetLook').addEventListener('click', () => { L.spriteLook = {}; drawParts(); applyLook(); });
+      q('#spriteMode').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; L.sprite = c.dataset.v; q('#spriteMode').querySelectorAll('.chip').forEach((x) => x.classList.toggle('on', x === c)); drawGal(); drawParts(); applyLook(); });
+      gal.addEventListener('click', () => { drawParts(); applyLook(); });
     }
     const hair = q('#hair');
     for (const hs of HAIR_STYLES) { const c = h('span', { class: 'chip ' + (L.look.hair === hs.id ? 'on' : ''), onclick: () => { L.look.hair = hs.id; hair.querySelectorAll('.chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); drawPortrait(); } }, hs.name); hair.append(c); }
@@ -140,5 +162,5 @@ function personaHint(L) {
   return `<b>${esc(L.first || 'Förnamn')} ${esc(L.last || 'Efternamn')}</b>, ${L.age} år · ${esc(prof?.name || '')}${Object.keys(prof?.cred || {}).length ? ' (trovärdig i ' + Object.keys(prof.cred).map((k) => ISSUE_BY_ID[k].short.toLowerCase()).join(', ') + ')' : ''}<br>${esc(EXPERIENCE.find((e) => e.id === p.experience)?.name || '')} · ${p.personality.map((id) => PERSONALITY_BY_ID[id]?.name.toLowerCase()).join(', ') || 'inga drag valda'}<br>Image: <b>${esc(img?.name || '')}</b> – ${auth}`;
 }
 export function finalizeLeader(L) {
-  return { name: `${L.first} ${L.last}`, first: L.first, last: L.last, gender: L.gender, age: L.age, look: fixLook({ ...L.look }), traits: { ...L.traits }, persona: { ...L.persona, personality: [...L.persona.personality] }, bg: { ...L.bg, yrke: PROFESSIONS.find((x) => x.id === L.persona.profession)?.name || 'Politiker' }, sprite: L.sprite && L.sprite !== 'auto' ? L.sprite : undefined };
+  return { name: `${L.first} ${L.last}`, first: L.first, last: L.last, gender: L.gender, age: L.age, look: fixLook({ ...L.look }), traits: { ...L.traits }, persona: { ...L.persona, personality: [...L.persona.personality] }, bg: { ...L.bg, yrke: PROFESSIONS.find((x) => x.id === L.persona.profession)?.name || 'Politiker' }, sprite: L.sprite && L.sprite !== 'auto' ? L.sprite : undefined, spriteLook: hasCustomLook(L.spriteLook) ? { ...L.spriteLook } : undefined };
 }

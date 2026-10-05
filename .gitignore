@@ -1,2 +1,4 @@
 tools/out/
 .DS_Store
+tools/embed/node_modules/
+tools/embed/package-lock.json

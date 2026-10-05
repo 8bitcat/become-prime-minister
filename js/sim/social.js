@@ -190,7 +190,9 @@ export function weeklySocial(state, rnd) {
   for (const p of activeParties(state)) {
     const l = state.people[p.leader]; if (!l) continue;
     const f = state.social.followers[l.id] ||= Object.fromEntries(PLATFORMS.map((pl) => [pl.id, 50]));
-    for (const pl of PLATFORMS) f[pl.id] = Math.round(f[pl.id] * (1 + (p.attention / 100) * .004 + (p.momentum || 0) * .003) + (p.isPlayer ? 0 : rnd() * 30));
+    // följarna glider mot en nivå som opinionen, kännedomen och uppmärksamheten motiverar
+    const sup = state.opinion.support[p.id] || 0; const aw = state.opinion.awareness[p.id] ?? 1;
+    for (const pl of PLATFORMS) { const mult = pl.id === 'tiktok' ? .45 : pl.id === 'facebook' ? 1.3 : 1; const target = (p.inRiksdag ? 12000 : 300) + sup * 26000 * mult * (.4 + aw * .6) + p.attention * 400 * mult; const cur = f[pl.id] || 50; const glide = cur + (target - cur) * (target > cur ? .07 : .02); f[pl.id] = Math.round(glide * (1 + (p.momentum || 0) * .003) + (p.isPlayer ? 0 : rnd() * 30)); }
   }
   // AI-partiledare som gör utspel
   if (rnd() < .5) {

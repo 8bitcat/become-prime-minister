@@ -22,6 +22,8 @@ import { stepReforms, capitalRegen, aiGovernmentReforms, aiProgramDrift, syncAxe
 import { digOldStatement, checkTextPromises, initMemory } from '../ai/memory.js';
 import { leakSecretDeals, utspelEffect } from './talk.js';
 import { monthlyMinisters } from './government.js';
+import { driftTraits } from './drift.js';
+import { monthlyGrudges } from './emotion.js';
 
 const me = (s) => s.parties[s.player.partyId];
 const leader = (s) => s.people[me(s).leader];
@@ -62,6 +64,8 @@ export function endWeek(state, rnd) {
     for (const it of monthlyParty(state, rnd)) queue(state, it);
     leakSecretDeals(state, rnd);
     for (const it of monthlyMinisters(state, rnd)) queue(state, it);
+    monthlyGrudges(state);
+    const dr = driftTraits(state, rnd); if (dr) report.items.push(dr);
     for (const sc of notes) report.items.push(`📊 ${sc.text}.`);
   }
   if (newYear) { for (const per of Object.values(state.people)) per.age++; p.members = Math.round(p.members * (1 + (p.momentum || 0) * .05)); yearlyParties(state, rnd); const lead = leader(state); if (lead.age >= 68 && rnd() < .35) queue(state, { type: 'retire' }); }

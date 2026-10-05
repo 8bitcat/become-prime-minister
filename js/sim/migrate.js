@@ -43,6 +43,7 @@ export function migrate(state) {
   state.secretDeals ||= [];
   for (const po of state.social?.posts || []) { po.comments ||= []; po.deleted ??= false; }
   for (const per of Object.values(state.people)) per.fatigue ??= 0;
+  state.memory.persona.dryg ??= 0; // v5: dryghet som egen ton
   state.v = CURRENT_SAVE;
   return from;
 }

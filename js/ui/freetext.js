@@ -13,6 +13,7 @@ import { toneLabel } from '../ai/analyze.js';
 import { adviserLine } from '../scene/debate.js';
 import { pressQuestions, pressAnswer, pressSummary, speechOutcome, privateTalk, focusGroup } from '../sim/talk.js';
 import { llmSettings, saveLlmSettings, MODELS, llmPing, resetClient, llmEnabled } from '../ai/llm.js';
+import { loadSmart, smartStatus } from '../ai/embed.js';
 import { characterArt } from '../art/sprites.js';
 import { activeParties } from '../sim/opinion.js';
 import { MINISTRIES } from '../sim/government.js';
@@ -226,7 +227,12 @@ export function aiSettingsDialog() {
     <div class="field"><label><input type="checkbox" id="en" ${st.enabled ? 'checked' : ''}> Använd Claude</label></div>
     <div class="field"><label>API-nyckel</label><input type="password" id="key" value="${esc(st.key || '')}" placeholder="sk-ant-…"></div>
     <div class="field"><label>Modell</label><select id="model">${MODELS.map((m) => `<option value="${m.id}" ${st.model === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>
-    <div id="res" class="help"></div>`;
-  const readIn = () => ({ enabled: body.querySelector('#en').checked, key: body.querySelector('#key').value.trim(), model: body.querySelector('#model').value });
+    <div id="res" class="help"></div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+    <p class="help"><b>Smart analys på enheten</b> – utan nyckel och utan kostnad: en liten språkmodell (multilingual-e5-small, ~118 MB, laddas en gång och cachas av webbläsaren) körs lokalt och förstår fria formuleringar betydligt bättre än den inbyggda matchningen. Fungerar på dator och nyare mobiler.</p>
+    <div class="field"><label><input type="checkbox" id="smart" ${st.smart ? 'checked' : ''}> Använd smart analys på enheten</label></div>
+    <div id="smartRes" class="help">${smartStatus().state === 'klar' ? '<span class="ok">Modellen är laddad.</span>' : smartStatus().state === 'laddar' ? `Laddar… ${smartStatus().progress || 0} %` : ''}</div>`;
+  const readIn = () => ({ enabled: body.querySelector('#en').checked, key: body.querySelector('#key').value.trim(), model: body.querySelector('#model').value, smart: body.querySelector('#smart').checked });
+  body.querySelector('#smart').addEventListener('change', (e) => { if (!e.target.checked) return; saveLlmSettings({ ...llmSettings(), ...readIn() }); const res = body.querySelector('#smartRes'); loadSmart((s) => { res.innerHTML = s.state === 'klar' ? '<span class="ok">Modellen är laddad – smart analys används.</span>' : s.state === 'fel' ? `<span class="danger">Kunde inte ladda: ${esc(s.error || '')}</span>` : `Laddar… ${s.progress || 0} %${s.file ? ' (' + esc(s.file) + ')' : ''}`; }).catch(() => {}); });
   modal({ title: '🤖 AI-läge (Claude)', body, buttons: [{ label: 'Testa nyckeln', close: false, onClick: async (btn) => { saveLlmSettings({ ...readIn(), enabled: true }); resetClient(); btn.disabled = true; body.querySelector('#res').textContent = 'Testar…'; try { await llmPing(); body.querySelector('#res').innerHTML = '<span class="ok">Fungerar!</span>'; } catch (e) { body.querySelector('#res').innerHTML = `<span class="danger">Misslyckades: ${esc(e.message)}</span>`; } btn.disabled = false; return false; } }, { label: 'Spara', cls: 'gold', onClick: () => { saveLlmSettings(readIn()); resetClient(); toast(readIn().enabled && readIn().key ? 'Claude-läget är på.' : 'Inbyggd analys används.'); } }] });
 }

@@ -4,7 +4,7 @@ import { START_PARTIES, LOGO_SHAPES, PARTY_COLORS } from '../data/parties.js';
 import { ISSUES, issueLabel } from '../data/issues.js';
 import { IDEOLOGIES, IDEOLOGY_BY_ID, FAMILIES, combinePositions, extremismOf, demoOf, ideologyLabel } from '../data/ideologies.js';
 import { SEGMENTS } from '../data/segments.js';
-import { logoSVG } from '../art/logo.js';
+import { logoSVG, imageToLogo } from '../art/logo.js';
 import { characterArt } from '../art/sprites.js';
 import { adviserLine } from '../scene/debate.js';
 const characterSVG = (p, o) => characterArt({ ...p, id: 'draft', sprite: p.sprite === 'auto' ? undefined : p.sprite }, o);
@@ -94,6 +94,7 @@ export function renderSetup({ onDone, onCancel }) {
       <div class="swatches" id="swatches"></div>
       <div class="field" style="margin-top:10px"><label>Slogan</label><input type="text" id="pslogan" value="${esc(P.slogan)}" placeholder="t.ex. Ett Sverige som håller ihop" maxlength="80"></div>
       <div class="field"><label>Logotyp</label><div class="chips" id="shapes"></div></div>
+      <div class="field"><label>Egen logotypbild <small class="muted">(valfritt – välj en bild från mobilen eller datorn; den ersätter formen ovan)</small></label><div class="logo-up"><input type="file" id="plogofile" accept="image/*"><button class="btn sm" id="plogoclear" style="display:${P.logoImage ? '' : 'none'}">Ta bort bilden</button></div></div>
       <div class="field"><label>Egen ideologi – ge den ett namn <small class="muted">(valfritt)</small></label><input type="text" id="pideo" value="${esc(P.ideologyName || '')}" placeholder="t.ex. Nordisk pragmatism, Grön konservatism…" maxlength="40"></div>
       <div class="field"><label>Programförklaring i egna ord <small class="muted">(valfritt – men allt du lovar här följs upp)</small></label><textarea id="pmanifest" rows="5" maxlength="1200" placeholder="Vad vill partiet? Skriv fritt. Konkreta löften med siffror registreras och granskas; vaga formuleringar flaggas av medierna.">${esc(P.manifesto || '')}</textarea><div class="adviser" id="padv"></div></div>`;
     const sw = left.querySelector('#swatches');
@@ -106,6 +107,8 @@ export function renderSetup({ onDone, onCancel }) {
     let advTmr = null;
     const upd = () => { P.name = left.querySelector('#pname').value.trim(); P.abbr = left.querySelector('#pabbr').value.trim().toUpperCase(); P.color = left.querySelector('#pcolor').value; P.color2 = left.querySelector('#pcolor2').value; P.slogan = left.querySelector('#pslogan').value.trim(); P.ideologyName = left.querySelector('#pideo').value.trim(); P.manifesto = left.querySelector('#pmanifest').value.trim(); P.logo.glyph = P.abbr || '?'; right.querySelector('#logoPreview').innerHTML = logoSVG(P, 120); right.querySelector('#prevName').textContent = P.name || 'Partinamn'; right.querySelector('#prevSlogan').textContent = P.slogan || 'Slogan'; clearTimeout(advTmr); advTmr = setTimeout(() => { left.querySelector('#padv').textContent = P.manifesto ? adviserLine(P.manifesto, {}) : ''; }, 250); };
     for (const id of ['pname', 'pabbr', 'pcolor', 'pcolor2', 'pslogan', 'pideo', 'pmanifest']) left.querySelector('#' + id).addEventListener('input', upd);
+    left.querySelector('#plogofile').addEventListener('change', async (e) => { const f = e.target.files?.[0]; if (!f) return; try { P.logoImage = await imageToLogo(f); left.querySelector('#plogoclear').style.display = ''; upd(); } catch (err) { modal({ title: 'Logotyp', body: `<p>${esc(err.message)}</p>`, buttons: [{ label: 'OK' }] }); } });
+    left.querySelector('#plogoclear').addEventListener('click', () => { P.logoImage = null; left.querySelector('#plogofile').value = ''; left.querySelector('#plogoclear').style.display = 'none'; upd(); });
     el.append(left, right); upd();
     return el;
   }
@@ -206,7 +209,7 @@ export function renderSetup({ onDone, onCancel }) {
     const L = draft.leader; const P = draft.mode === 'new' ? draft.party : START_PARTIES.find((p) => p.id === draft.takeoverId);
     const sum = h('div', { class: 'panel' });
     sum.innerHTML = `<h3>Sammanfattning</h3><div class="row" style="align-items:flex-start"><div class="hero-logo">${logoSVG({ ...P, logo: { ...P.logo, glyph: P.abbr } }, 120)}</div><div><b style="font-size:18px">${esc(P.name)} (${esc(P.abbr)})</b><br><small class="muted">${esc(P.slogan)}</small><br><small>${draft.mode === 'new' ? `Nytt parti – ${esc(ideologyLabel(P.ideology.primary, P.ideology.secondary))} · 150 medlemmar, 50 000 kr, 0 mandat` : `${P.seats} mandat i riksdagen`}</small></div></div>
-      <div class="row" style="margin-top:14px;align-items:flex-start"><div class="face lg">${characterSVG({ look: L.look, age: L.age, gender: L.gender, sprite: L.sprite }, { crop: 'face', expr: 'confident', id: 'sum' })}</div><div><b style="font-size:18px">${esc(L.first)} ${esc(L.last)}</b>, ${L.age} år<br><small class="muted">${esc(L.bg.utbildning)} · ${esc(L.bg.hemstad)} · ${esc(L.bg.familj)}</small><br><small>Starkast: ${TRAITS.slice().sort((a, b) => L.traits[b.id] - L.traits[a.id]).slice(0, 3).map((t) => t.name.toLowerCase()).join(', ')}. Svagast: ${TRAITS.slice().sort((a, b) => L.traits[a.id] - L.traits[b.id]).slice(0, 2).map((t) => t.name.toLowerCase()).join(', ')}.</small></div></div>
+      <div class="row" style="margin-top:14px;align-items:flex-start"><div class="face lg">${characterSVG({ look: L.look, age: L.age, gender: L.gender, sprite: L.sprite, spriteLook: L.spriteLook }, { crop: 'face', expr: 'confident', id: 'sum' })}</div><div><b style="font-size:18px">${esc(L.first)} ${esc(L.last)}</b>, ${L.age} år<br><small class="muted">${esc(L.bg.utbildning)} · ${esc(L.bg.hemstad)} · ${esc(L.bg.familj)}</small><br><small>Starkast: ${TRAITS.slice().sort((a, b) => L.traits[b.id] - L.traits[a.id]).slice(0, 3).map((t) => t.name.toLowerCase()).join(', ')}. Svagast: ${TRAITS.slice().sort((a, b) => L.traits[a.id] - L.traits[b.id]).slice(0, 2).map((t) => t.name.toLowerCase()).join(', ')}.</small></div></div>
       <p style="margin-top:14px" class="help">Spelet börjar måndagen den 4 januari 2027. Nästa riksdagsval hålls i september 2030. Allt sparas automatiskt.</p>`;
     const slots = h('div', { class: 'panel' });
     slots.innerHTML = `<h3>Välj sparplats</h3><p class="help">Tre platser. En upptagen plats skrivs över.</p>`;
@@ -225,7 +228,7 @@ export function renderSetup({ onDone, onCancel }) {
   function buildDef() {
     const P = draft.party;
     return { mode: draft.mode, takeoverId: draft.takeoverId, slot: draft.slot,
-      party: draft.mode === 'new' ? { name: P.name, abbr: P.abbr, color: P.color, color2: P.color2, logo: { ...P.logo, glyph: P.abbr }, slogan: P.slogan, pos: { ...P.pos }, profile: { ...P.profile }, ideology: { primary: P.ideology.primary, secondary: [...P.ideology.secondary] }, structure: { ...P.structure, malgrupper: [...P.structure.malgrupper] }, manifesto: P.manifesto || '', ideologyName: P.ideologyName || '' } : null,
+      party: draft.mode === 'new' ? { name: P.name, abbr: P.abbr, color: P.color, color2: P.color2, logo: { ...P.logo, glyph: P.abbr }, slogan: P.slogan, pos: { ...P.pos }, profile: { ...P.profile }, ideology: { primary: P.ideology.primary, secondary: [...P.ideology.secondary] }, structure: { ...P.structure, malgrupper: [...P.structure.malgrupper] }, manifesto: P.manifesto || '', ideologyName: P.ideologyName || '', logoImage: P.logoImage || null } : null,
       leader: finalizeLeader(draft.leader) };
   }
   render();

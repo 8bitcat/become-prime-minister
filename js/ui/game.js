@@ -3,7 +3,7 @@ import { G, save, exportSave } from '../core/state.js';
 import { h, esc, fmt, pct, kr, signed, fmtDate, weekNo, clamp } from '../core/util.js';
 import { ISSUES, ISSUE_BY_ID, issueLabel } from '../data/issues.js';
 import { REGIONS } from '../data/regions.js';
-import { logoSVG } from '../art/logo.js';
+import { logoSVG, imageToLogo } from '../art/logo.js';
 import { characterArt as characterSVG } from '../art/sprites.js';
 import { postFlow, threadDialog, pressFlow, speechFlow, talkFlow, utspelFlow, fokusFlow, statementDialog, aiSettingsDialog, textDialog } from './freetext.js';
 import { negotiationCounter } from '../sim/talk.js';
@@ -48,6 +48,7 @@ export const UI = {
   post(params) { postFlow(params, UI); },
   openPost(po) { threadDialog(po, UI).then(() => renderShell()); },
   aiSettings() { aiSettingsDialog(); },
+  changeLogo() { logoFlow(); },
   budget() { budgetFlow(); },
   resign() { resignFlow(); },
   reshuffle() { reshuffleFlow(); },
@@ -260,7 +261,7 @@ function createLeaderModal() {
     const L = blankLeader(G.rnd, G.rnd() < .5 ? 'k' : 'm');
     const body = h('div', {});
     const cr = renderLeaderCreator(body, L, { rnd: G.rnd });
-    const m = modal({ title: 'Skapa ny partiledare', body, wide: true, closable: false, buttons: [{ label: 'Avbryt', onClick: () => resolve(null) }, { label: 'Tillträd som partiledare', cls: 'gold', onClick: () => { const err = cr.validate(); if (err) { toast(err, 'bad'); return false; } const def = finalizeLeader(L); const per = makePerson(G.rnd, { partyId: me().id, role: 'leader', gender: def.gender, age: def.age, first: def.first, last: def.last, persona: def.persona, look: def.look, traits: def.traits }); per.name = def.name; per.bg = { ...def.bg }; per.baseTraits = { ...def.traits }; per.traits = applyPersona(def.traits, def.persona); per.cred = credOf(def.persona); per.approval = 35; if (def.sprite) per.sprite = def.sprite; resolve(per); } }] });
+    const m = modal({ title: 'Skapa ny partiledare', body, wide: true, closable: false, buttons: [{ label: 'Avbryt', onClick: () => resolve(null) }, { label: 'Tillträd som partiledare', cls: 'gold', onClick: () => { const err = cr.validate(); if (err) { toast(err, 'bad'); return false; } const def = finalizeLeader(L); const per = makePerson(G.rnd, { partyId: me().id, role: 'leader', gender: def.gender, age: def.age, first: def.first, last: def.last, persona: def.persona, look: def.look, traits: def.traits }); per.name = def.name; per.bg = { ...def.bg }; per.baseTraits = { ...def.traits }; per.traits = applyPersona(def.traits, def.persona); per.cred = credOf(def.persona); per.approval = 35; if (def.sprite) per.sprite = def.sprite; if (def.spriteLook) per.spriteLook = def.spriteLook; resolve(per); } }] });
     m.el.style.width = 'min(1240px, 98vw)';
   });
 }
@@ -390,6 +391,17 @@ async function noConfidenceFlow() {
   save(); await processQueue(); renderShell();
 }
 
+// Egen logotypbild (från mobilen eller datorn) på det egna partiet
+function logoFlow() {
+  const p = me();
+  const body = h('div', {});
+  body.innerHTML = `<p class="help">Välj en bild (foto eller fil). Den beskärs till en cirkel och sparas i sparfilen. Syns i mätningar, på valnatten och i riksdagens mandatbåge.</p><div class="row" style="align-items:center;gap:14px"><div class="hero-logo" id="prev">${logoSVG(p, 100)}</div><div class="logo-up"><input type="file" id="lf" accept="image/*">${p.logoImage ? '<button class="btn sm" id="lclear">Ta bort bilden</button>' : ''}</div></div>`;
+  body.querySelector('#lf').addEventListener('change', async (e) => { const f = e.target.files?.[0]; if (!f) return; try { p.logoImage = await imageToLogo(f); body.querySelector('#prev').innerHTML = logoSVG(p, 100); save(); toast('Logotypen är uppdaterad.', 'good'); } catch (err) { toast(err.message, 'bad'); } });
+  body.querySelector('#lclear')?.addEventListener('click', () => { p.logoImage = null; body.querySelector('#prev').innerHTML = logoSVG(p, 100); save(); });
+  modal({ title: 'Partiets logotyp', body, buttons: [{ label: 'Klar', cls: 'gold', onClick: () => renderShell() }] });
+}
+let spritesTimer = null;
+document.addEventListener('bpm:sprites', () => { if (!G.state) return; clearTimeout(spritesTimer); spritesTimer = setTimeout(() => { if (!UI.busy) renderShell(); }, 120); });
 function menuDialog() {
   modal({ title: 'Meny', body: `<p class="help">Spelet sparas automatiskt efter varje handling och vecka. Här kan du dessutom exportera sparfilen, slå på Claude-läget eller gå tillbaka till startskärmen.</p>`, buttons: [{ label: `🤖 AI-läge (Claude) – ${llmEnabled() ? 'på' : 'av'}`, onClick: () => aiSettingsDialog() }, { label: 'Exportera sparfil', onClick: () => exportSave() }, { label: 'Till startskärmen', onClick: () => { save(); UI.onExit?.(); } }, { label: 'Stäng', cls: 'gold' }], stack: true });
 }

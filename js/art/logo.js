@@ -21,7 +21,20 @@ const SHAPES = {
 };
 const TEXT_ONLY = new Set(['m', 'v', 'l', 'circle', 'shield', 'hex']);
 
+// Egen logotypbild från mobilen eller datorn: skalas till 160×160 (täckande, centrerad) och sparas som data-URL i sparfilen.
+export function imageToLogo(file, size = 160) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith('image/')) return reject(new Error('Välj en bildfil.'));
+    const url = URL.createObjectURL(file); const im = new Image();
+    im.onload = () => { try { const c = document.createElement('canvas'); c.width = size; c.height = size; const g = c.getContext('2d'); const s = Math.max(size / im.naturalWidth, size / im.naturalHeight); const w = im.naturalWidth * s, h = im.naturalHeight * s; g.drawImage(im, (size - w) / 2, (size - h) / 2, w, h); let out = c.toDataURL('image/webp', .85); if (!out.startsWith('data:image/webp')) out = c.toDataURL('image/png'); if (out.length > 120000) out = c.toDataURL('image/jpeg', .8); URL.revokeObjectURL(url); resolve(out); } catch (e) { reject(e); } };
+    im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Bilden kunde inte läsas.')); };
+    im.src = url;
+  });
+}
+
+let LOGO_N = 0;
 export function logoSVG(party, size = 64) {
+  if (party.logoImage) { const id = 'lc' + (++LOGO_N); return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}"><defs><clipPath id="${id}"><circle cx="50" cy="50" r="48"/></clipPath></defs><circle cx="50" cy="50" r="48" fill="${esc(party.color || '#fff')}"/><image href="${party.logoImage}" x="2" y="2" width="96" height="96" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"/></svg>`; }
   const { shape = 'circle', glyph = party.abbr } = party.logo || {};
   const draw = SHAPES[shape] || SHAPES.circle;
   const fs = glyph.length > 2 ? 30 : glyph.length === 2 ? 38 : 50;

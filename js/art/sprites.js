@@ -54,9 +54,12 @@ export function characterArt(person, opts = {}) {
   const sp = spriteFor(person);
   if (!sp) return characterSVG(person, opts);
   const { pose = 'stand', expr = 'neutral', talking = false, crop = 'bust' } = opts;
-  if (crop === 'face' || crop === 'head') return `<img class="sprite-face" src="${SPRITE_BASE}${sp.id}/face.webp" alt="" draggable="false">`;
-  const p = pose !== 'stand' ? POSE_MAP[pose] || 'stand' : EXPR_POSE[expr] || 'stand';
-  return `<img class="sprite${talking ? ' talking' : ''}" src="${SPRITE_BASE}${sp.id}/${p}.webp" alt="" draggable="false">`;
+  const p = crop === 'face' || crop === 'head' ? 'face' : pose !== 'stand' ? POSE_MAP[pose] || 'stand' : EXPR_POSE[expr] || 'stand';
+  let src = `${SPRITE_BASE}${sp.id}/${p}.webp`;
+  if (hasCustomLook(person.spriteLook) && sp.colors) { const u = lookUrl(sp.id, person.spriteLook, p); if (u) src = u; else if (!lookReady(sp.id, person.spriteLook)) prepareLook(sp.id, person.spriteLook).then(() => document.dispatchEvent(new CustomEvent('bpm:sprites'))).catch(() => {}); }
+  if (p === 'face') return `<img class="sprite-face" src="${src}" alt="" draggable="false">`;
+  return `<img class="sprite${talking ? ' talking' : ''}" src="${src}" alt="" draggable="false">`;
 }
+import { lookUrl, lookReady, prepareLook, hasCustomLook } from './recolor.js';
 export const spriteFaceUrl = (id) => `${SPRITE_BASE}${id}/face.webp`;
 export const spritePoseUrl = (id, pose = 'stand') => `${SPRITE_BASE}${id}/${pose}.webp`;

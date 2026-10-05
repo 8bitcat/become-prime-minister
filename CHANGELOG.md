@@ -7,6 +7,17 @@ git-tagg (`v0.1.0` osv.).
 
 <!-- släpp: tools/release.mjs lägger nya versioner direkt under denna rad -->
 
+## [0.5.0] – 2026-10-05 – Tänk på vad du säger
+- Textförståelsen i stor skala: en kunskapsbas med över 1 300 svenska formuleringar om varje sakfråga (med riktning), ton, attityd och känslor matchas mening för mening med viktade teckentrigram – böjningar, stavfel och fria formuleringar fångas ("folk har inte råd med maten" = ekonomi, "mormor fick vänta på akuten" = vården, "ta hand om planeten för barnbarnen" = klimat). Negationer vänder riktningen, räkneord blir siffror ("femtiotusen nya bostäder", "tio procent"), svaret på en fråga bedöms mot frågans innehåll, och politikområdena och statistikens namn ingår automatiskt.
+- Smart analys på enheten (valfritt, ☰ Meny → AI-läge): en liten flerspråkig språkmodell (multilingual-e5-small, ~118 MB, laddas en gång) körs lokalt i webbläsaren och förstår fria formuleringar semantiskt – utan nyckel och utan kostnad. Claude-läget finns kvar som det vassaste alternativet och ser nu också känslor, intensitet och dryghet.
+- Känslor hos dem du talar med: motståndare och journalister blir arga, ledsna, glada eller nervösa – i vilken grad som helst – av det du skriver. Förolämpningar, hån och hot gör dem arga; beröm och empati gör dem glada; avslöjade faktafel gör dem nervösa. Humöret syns på figuren och i en känslochip, färgar replikerna (utbrott, sammanbrott, medgivanden), gör upprörda motståndare mer benägna till faktafel och påverkar publiken: utbrott ger dig poäng, men mobbar du någon som redan ligger buar publiken. Känslorna följer med ut: agg som varar i månader, sämre relationer, journalister som minns – och rubriker som "tappade fattningen" eller "bröt ihop".
+- Ny ton: dryg (nedlåtande/överlägsen). Dryga svar landar sällan – och formar dig.
+- Personligheten formas av beteendet: skriver du ofta aggressivt stiger aggressiviteten (och lugnet sjunker), är du dryg faller karisman, är du personlig och varm växer karisma och social förmåga, saklighet ger intelligens och retorik, undvikande svar sänker retoriken. Månadsvis, inom ±18 från egenskaperna du skapades med. Medierna skriver när mönstret blir tydligt ("Väljarna om X: dryg").
+- Följarna på sociala medier växer automatiskt med opinionen, kännedomen och uppmärksamheten (och krymper långsamt när stödet faller).
+- Anpassa den tecknade figuren: välj en ur galleriet och bestäm själv hårfärg, hudton, kläder, skjorta och detaljer – figurerna är segmenterade i färgbara delar och färgas om i webbläsaren med skuggningen bevarad. Gäller alla sex poser och ansiktsbilden.
+- Egen logotyp: ladda upp en bild från mobilen eller datorn i partiskaparen eller på Partiet-sidan (🖼️ Logotyp). Bilden beskärs till en cirkel, sparas i sparfilen och syns i mätningar, på valnatten och i mandatbågen.
+- Nya verktyg: tools/mask-chars.py (segmentering), tools/embed-kb.mjs (förberäknade inbäddningar). Testerna utökade till 70 kontroller av textlagret.
+
 ## [0.4.1] – 2026-10-04 – Löften i hela meningar
 - Löfteskollen: "för alla under 30 år" och årtal som "till 2030" tolkas inte längre som löften om antal år, och löftestexten är hela meningen i stället för ett klipp mitt i ett ord.
 - Textanalysen: en text utan tydliga tonsignaler räknas som saklig (inte konfrontativ).

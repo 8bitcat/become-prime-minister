@@ -12,6 +12,7 @@ import { makePerson } from './people.js';
 import { pickJournalist, adjustJournalist } from './media.js';
 import { BILLS } from './riksdag.js';
 import { recordStatement, factCheck } from '../ai/memory.js';
+import { blankMood, moodDelta, applyMoodTo, moodEffects, moodReply, moodLabel, moodExpr, audienceOnMood, recordGrudge, grudgeOf, decayMood, OUTBURST, BREAKDOWN, CONCESSION } from './emotion.js';
 
 const me = (s) => s.parties[s.player.partyId];
 const BILL_AREA = Object.fromEntries(BILLS.map((b) => [b.id, b]));
@@ -80,8 +81,41 @@ export function buildDebate(state, rnd, { kind = 'tv', host = null, campaign = f
     const chosen = []; for (let i = 0; i < n; i++) { const is = issues.splice(Math.floor(rnd() * Math.min(3, issues.length)), 1)[0]; chosen.push(is.id); }
     for (const isId of chosen) d.rounds.push(buildRound(state, rnd, op, isId));
   }
+  // känsloläget hos den du möter: tidigare agg mot dig följer med in i studion
+  const g = grudgeOf(d.opponent, state.player.leaderId);
+  d.mood = { ...blankMood(), ...(d.opponent?.mood || {}) };
+  d.mood.anger = clamp(d.mood.anger + Math.max(0, g) * .5, 0, 80); d.mood.joy = clamp(d.mood.joy + Math.max(0, -g) * .4, 0, 60);
+  d.moodEvents = []; d.pBonus = 0; d.gaffeBoost = 0;
   state.stats.debates++;
   return d;
+}
+// En felaktig siffra i motståndarens påstående – och en INVÄNDNING! att avslöja den med
+export function addGaffe(state, rnd, r, opLeader) {
+  if (r.gaffe || !PHRASES[r.issue]) return null;
+  const id = pick(rnd, PHRASES[r.issue].stat); const st = STAT_BY_ID[id]; const actual = state.sweden.stats[id];
+  if (!st || !Number.isFinite(actual) || actual === 0) return null;
+  const wrong = +(actual * (rnd() < .5 ? 1.6 + rnd() * .8 : .35 + rnd() * .3)).toFixed(st.d);
+  r.gaffe = { stat: id, name: st.name, wrong, actual, unit: st.unit };
+  r.statement += ` ${pick(rnd, ['Siffrorna talar sitt tydliga språk:', 'Och det vet alla:', 'Fakta är att'])} ${st.name.toLowerCase()} ligger på ${fmt(wrong, st.d)} ${st.unit}.`;
+  r.options.push({ type: 'invandning', label: 'INVÄNDNING!', text: `Det stämmer inte. ${st.name} är ${fmt(actual, st.d)} ${st.unit} – inte ${fmt(wrong, st.d)}. Du har fel siffror, och hela ditt resonemang faller.`, evidence: `${st.name}: ${fmt(actual, st.d)} ${st.unit} enligt officiell statistik.`, gaffe: true });
+  return r.gaffe;
+}
+// Känslorna efter en runda: hur det du sa landade hos motparten, vad publiken tycker om det, och
+// hur det färgar repliken. Returnerar { eff, aud, reply }.
+function moodRound(state, rnd, debate, a, { ok, caught, interrupt }, reply) {
+  const opPerson = debate.opponent ? (state.people[debate.opponent.id] || debate.opponent) : null;
+  const d = moodDelta(a, { ok, caught, interrupt });
+  applyMoodTo(debate.mood, d, opPerson?.traits || {});
+  const eff = moodEffects(debate.mood, rnd);
+  const aud = audienceOnMood(debate.mood, a, eff);
+  if (aud.delta) debate.meter = clamp(debate.meter + aud.delta, -100, 100);
+  debate.gaffeBoost = eff.gaffe; debate.pBonus = eff.pMod;
+  if (eff.outburst || eff.breakdown || eff.concede) debate.moodEvents.push({ outburst: eff.outburst, breakdown: eff.breakdown, concede: eff.concede, label: eff.label.label });
+  let out = reply;
+  if (eff.outburst) out = pick(rnd, OUTBURST); else if (eff.breakdown) out = pick(rnd, BREAKDOWN); else if (eff.concede) out = pick(rnd, CONCESSION); else out = moodReply(rnd, debate.mood, reply);
+  const label = moodLabel(debate.mood);
+  const ex = label.level >= 2 ? moodExpr(debate.mood) : null;
+  return { eff, aud, reply: out, mood: label, opExpr: ex?.expr, opPose: ex?.pose };
 }
 function baseOptions(state, rnd, issue) {
   const leader = state.people[me(state).leader];
@@ -105,23 +139,15 @@ function buildRound(state, rnd, op, issue) {
   const flip = op.posStart && Math.abs((op.posStart[issue] || 0) - op.pos[issue]) > 30;
   if (contra) options.push({ type: 'invandning', label: 'INVÄNDNING!', text: `Vänta nu. ${contra.vote === 'ja' ? 'Förslaget' : 'Motionen'} "${contra.title}" – ni röstade ${contra.vote.toUpperCase()}. Hur går det ihop med det du just sa?`, evidence: `Riksdagens protokoll: ${op.abbr} röstade ${contra.vote} om "${contra.title}".` });
   else if (flip) options.push({ type: 'invandning', label: 'INVÄNDNING!', text: `För bara några år sedan stod ${op.abbr} för raka motsatsen. Vad hände – bytte ni åsikt eller bytte ni väljare?`, evidence: `${op.name}s partiprogram har flyttat sig kraftigt i frågan om ${is.name.toLowerCase()}.` });
+  const round = { issue, statement, options, opExpr: side === 'R' ? 'determined' : 'confident', resolved: false, gaffe: null };
   // AI-politiker kan också klanta sig: en felaktig siffra som går att avslöja
   const ol = state.people[op.leader];
-  let gaffe = null, stmt = statement;
-  if (!contra && !flip && rnd() < .14 + (50 - (ol?.traits.intelligens ?? 50)) / 400) {
-    const id = pick(rnd, PHRASES[issue].stat); const st = STAT_BY_ID[id]; const actual = state.sweden.stats[id];
-    if (st && Number.isFinite(actual) && actual !== 0) {
-      const wrong = +(actual * (rnd() < .5 ? 1.6 + rnd() * .8 : .35 + rnd() * .3)).toFixed(st.d);
-      gaffe = { stat: id, name: st.name, wrong, actual, unit: st.unit };
-      stmt += ` Siffrorna talar sitt tydliga språk: ${st.name.toLowerCase()} ligger på ${fmt(wrong, st.d)} ${st.unit}.`;
-      options.push({ type: 'invandning', label: 'INVÄNDNING!', text: `Det stämmer inte. ${st.name} är ${fmt(actual, st.d)} ${st.unit} – inte ${fmt(wrong, st.d)}. Du har fel siffror, och hela ditt resonemang faller.`, evidence: `${st.name}: ${fmt(actual, st.d)} ${st.unit} enligt officiell statistik.`, gaffe: true });
-    }
-  }
-  return { issue, statement: stmt, options, opExpr: side === 'R' ? 'determined' : 'confident', resolved: false, gaffe };
+  if (!contra && !flip && rnd() < .14 + (50 - (ol?.traits.intelligens ?? 50)) / 400) addGaffe(state, rnd, round, ol);
+  return round;
 }
 
 // Fritt svar: spelaren skrev själv. Analysen (ai/analyze.js eller Claude) avgör utfallet.
-const WINLOSE = { saklig: [14, -6], kansla: [15, -8], aggressiv: [20, -14], humor: [16, -12], kampande: [14, -8], undvikande: [4, -12] };
+const WINLOSE = { saklig: [14, -6], kansla: [15, -8], aggressiv: [20, -14], humor: [16, -12], kampande: [14, -8], undvikande: [4, -12], dryg: [10, -14] };
 export function resolveFree(state, rnd, debate, roundIdx, text, a) {
   G = rnd;
   const r = debate.rounds[roundIdx];
@@ -145,7 +171,11 @@ export function resolveFree(state, rnd, debate, roundIdx, text, a) {
     case 'humor': p += (t.karisma - 45) / 120 + (t.social - 45) / 200 + (debate.kind === 'podd' ? .15 : debate.kind === 'riksdag' ? -.12 : 0) + (hasTrait(l, 'humoristisk') ? .08 : -.05); break;
     case 'kampande': p += (t.retorik - 45) / 120 + (t.karisma - 45) / 200 + credFit; break;
     case 'undvikande': p += -.15 + (t.retorik - 45) / 250 - (r.gotcha ? .1 : 0); break;
+    case 'dryg': p += -.08 + (t.intelligens - 45) / 200 - (r.interview || r.podd ? .1 : 0); break;
   }
+  p += debate.pBonus || 0; // en upprörd eller nervös motståndare är lättare att slå
+  if ((a.emotion?.insult || 0) > .3 && (r.interview || r.podd)) p -= .15; // att förolämpa journalisten går sällan hem
+  if ((a.emotion?.praise || 0) > .4 && !(r.interview || r.podd)) p -= .05; // beröm vinner inga poäng – men gör motståndaren mjuk
   const okClaims = (a.claims || []).filter((c) => c.ok === true).length, wrongClaims = (a.claims || []).filter((c) => c.ok === false).length;
   p += okClaims * .08 - wrongClaims * .25;
   const caught = !!(r.gaffe && !r.resolved && ((a.claims || []).some((c) => c.stat === r.gaffe.stat && c.ok) || (/stämmer inte|fel siffr|inte sant|felaktig|faktiskt är|i själva verket|är fel/.test(text.toLowerCase()) && text.toLowerCase().includes(r.gaffe.name.toLowerCase().slice(0, 6)))));
@@ -171,12 +201,14 @@ export function resolveFree(state, rnd, debate, roundIdx, text, a) {
   else reply = ok ? (caught ? pick(rnd, ['…Det… jag hade en annan siffra framför mig.', 'Du rycker siffran ur sitt sammanhang!', 'Vi… vi får återkomma om exakta tal.']) : dom === 'humor' ? pick(rnd, ['Mycket roligt. Men svara på frågan.', 'Publiken skrattar – jag gör det inte.']) : pick(rnd, ['Det är inte så enkelt som du låter påskina.', 'Jag känner inte igen den beskrivningen.', 'Vi kan väl vara överens om att det är komplicerat.'])) : pick(rnd, ['Där hör ni – inga svar, bara ord.', `Det här är typiskt ${mine.abbr}. Mycket snack.`, 'Du har uppenbarligen inte läst siffrorna.', 'Publiken förtjänar bättre än det där.']);
   if (rec.contradictions.length && !ok) reply = pick(rnd, ['Det där är inte vad ni sa för ett tag sedan. Vilken linje gäller?', 'Ni byter fot i den här frågan varje gång det blåser.', 'Väljarna hör att ni säger en sak i dag och en annan i morgon.']);
   if (wrongClaims && !ok && debate.kind !== 'podd') { const c = a.claims.find((x) => x.ok === false); reply = `Nej. ${c.name} är ${fmt(c.actual, STAT_BY_ID[c.stat]?.d ?? 1)}, inte ${fmt(c.value)}. Om ni inte kan siffrorna, hur ska ni styra landet?`; }
+  const mr = moodRound(state, rnd, debate, a, { ok, caught, interrupt: !!r.interrupt }, reply);
+  reply = mr.reply;
   const narration = ok ? pick(rnd, REACT_WIN) : pick(rnd, REACT_LOSE);
   const poses = body.poses || ['stand', 'open'];
-  const myPose = caught ? 'point' : dom === 'aggressiv' ? 'slam' : dom === 'saklig' ? (poses.includes('open') ? 'open' : 'stand') : dom === 'undvikande' ? 'think' : dom === 'humor' ? 'hips' : dom === 'kampande' ? 'point' : poses[0];
-  const followUp = (r.interview || r.podd) && !r.followed && !r.interrupt && (a.answers < .4 || wrongClaims > 0 || (a.promises?.length > 0 && rnd() < .5));
-  const interrupt = !r.interview && !r.podd && !r.interrupt && !r.followed && !ok && rnd() < .25 + ((state.people[debate.opponentParty ? state.parties[debate.opponentParty].leader : ''] || {}).traits?.aggressivitet - 45 || 0) / 200;
-  return { ok, delta, reply, narration, myExpr: ok ? (caught ? 'objection' : dom === 'aggressiv' ? 'angry' : dom === 'humor' ? 'happy' : 'confident') : 'nervous', myPose, opExpr: ok ? (caught ? 'shocked' : 'nervous') : 'smug', opPose: ok ? 'stand' : 'cross', evidence: caught ? `${r.gaffe.name}: ${fmt(r.gaffe.actual, STAT_BY_ID[r.gaffe.stat]?.d ?? 1)} ${r.gaffe.unit} – inte ${fmt(r.gaffe.wrong, STAT_BY_ID[r.gaffe.stat]?.d ?? 1)}.` : null, caught, followUp, interrupt, contradictions: rec.contradictions, wrongClaims, analysis: a };
+  const myPose = caught ? 'point' : dom === 'aggressiv' ? 'slam' : dom === 'saklig' ? (poses.includes('open') ? 'open' : 'stand') : dom === 'undvikande' ? 'think' : dom === 'humor' ? 'hips' : dom === 'kampande' ? 'point' : dom === 'dryg' ? 'hips' : poses[0];
+  const followUp = (r.interview || r.podd) && !r.followed && !r.interrupt && (a.answers < .4 || wrongClaims > 0 || (a.promises?.length > 0 && rnd() < .5) || (debate.mood.anger > 45 && rnd() < .5));
+  const interrupt = !r.interview && !r.podd && !r.interrupt && !r.followed && !mr.eff.outburst && !mr.eff.breakdown && ((!ok && rnd() < .25 + ((state.people[debate.opponentParty ? state.parties[debate.opponentParty].leader : ''] || {}).traits?.aggressivitet - 45 || 0) / 200) || (debate.mood.anger > 55 && rnd() < .35));
+  return { ok, delta, reply, narration, myExpr: ok ? (caught ? 'objection' : dom === 'aggressiv' ? 'angry' : dom === 'humor' ? 'happy' : 'confident') : 'nervous', myPose, opExpr: mr.opExpr || (ok ? (caught ? 'shocked' : 'nervous') : 'smug'), opPose: mr.opPose || (ok ? 'stand' : 'cross'), evidence: caught ? `${r.gaffe.name}: ${fmt(r.gaffe.actual, STAT_BY_ID[r.gaffe.stat]?.d ?? 1)} ${r.gaffe.unit} – inte ${fmt(r.gaffe.wrong, STAT_BY_ID[r.gaffe.stat]?.d ?? 1)}.` : null, caught, followUp, interrupt, contradictions: rec.contradictions, wrongClaims, analysis: a, mood: mr.mood, moodNote: mr.aud.note, audienceDelta: mr.aud.delta, moodEff: mr.eff };
 }
 function buildInterviewRounds(state, rnd, j, issue) {
   const mine = me(state); const leader = state.people[mine.leader];
@@ -271,10 +303,13 @@ export function resolveOption(state, rnd, debate, roundIdx, optIdx) {
   if (debate.kind === 'podd') reply = ok ? pick(rnd, ['Haha, älskar det. Lyssnare, hörde ni?', 'Bra svar. Det där klipper vi.', 'Okej, det köper jag.']) : pick(rnd, ['Mm. Det lät lite som en pressrelease.', 'Du låter som alla andra politiker nu.', 'Mina lyssnare kommer inte gilla det där.']);
   else if (debate.kind === 'interview') reply = ok ? pick(rnd, ['Tack, det var ett tydligt svar.', 'Okej. Vi går vidare.', 'Intressant. Nästa fråga.']) : pick(rnd, ['Det var inget svar på min fråga.', 'Tittarna hör nog att du undviker frågan.', 'Jag tolkar det som att du inte vet.']);
   else reply = ok ? (o.type === 'invandning' ? pick(rnd, ['…Det… det var ett annat läge då.', 'Du rycker det ur sitt sammanhang!', 'Jag… vi har omprövat den frågan.']) : o.type === 'humor' ? pick(rnd, ['Mycket roligt. Men svara på frågan.', 'Publiken skrattar – jag gör det inte.']) : pick(rnd, ['Det är inte så enkelt som du låter påskina.', 'Jag känner inte igen den beskrivningen.', 'Vi kan väl vara överens om att det är komplicerat.'])) : pick(rnd, ['Där hör ni – inga svar, bara ord.', `Det här är typiskt ${mine.abbr}. Mycket snack.`, 'Du har uppenbarligen inte läst siffrorna.', 'Publiken förtjänar bättre än det där.']);
+  const synth = { emotion: { insult: o.type === 'angrepp' ? .5 : 0, mock: o.type === 'humor' ? .3 : 0, praise: o.type === 'kompromiss' ? .3 : 0, empathy: o.type === 'kompromiss' ? .2 : 0, threat: 0, concede: 0 }, tone: {}, dominant: o.type === 'angrepp' ? 'aggressiv' : o.type === 'humor' ? 'humor' : o.type === 'kansla' ? 'kansla' : 'saklig', intensity: 0, claims: [] };
+  const mr = debate.mood ? moodRound(state, rnd, debate, synth, { ok, caught: o.type === 'invandning' && ok, interrupt: false }, reply) : null;
+  if (mr) reply = mr.reply;
   const narration = ok ? pick(rnd, REACT_WIN) : pick(rnd, REACT_LOSE);
   const poses = body.poses || ['stand', 'open'];
   const myPose = o.type === 'invandning' ? 'point' : o.type === 'angrepp' ? 'slam' : o.type === 'fakta' ? (poses.includes('open') ? 'open' : 'stand') : o.type === 'kompromiss' ? 'think' : o.type === 'humor' ? 'hips' : poses[0];
-  return { ok, delta, reply, narration, myExpr: ok ? (o.type === 'invandning' ? 'objection' : o.type === 'angrepp' ? 'angry' : o.type === 'humor' ? 'happy' : 'confident') : 'nervous', myPose, opExpr: ok ? (o.type === 'invandning' ? 'shocked' : 'nervous') : 'smug', opPose: ok ? 'stand' : 'cross', evidence: o.evidence || null };
+  return { ok, delta, reply, narration, myExpr: ok ? (o.type === 'invandning' ? 'objection' : o.type === 'angrepp' ? 'angry' : o.type === 'humor' ? 'happy' : 'confident') : 'nervous', myPose, opExpr: mr?.opExpr || (ok ? (o.type === 'invandning' ? 'shocked' : 'nervous') : 'smug'), opPose: mr?.opPose || (ok ? 'stand' : 'cross'), evidence: o.evidence || null, mood: mr?.mood, moodNote: mr?.aud.note, audienceDelta: mr?.aud.delta || 0, moodEff: mr?.eff };
 }
 
 export function finishDebate(state, rnd, debate) {
@@ -303,10 +338,25 @@ export function finishDebate(state, rnd, debate) {
   if (debate.journalistId) { const attacked = debate.rounds.some((r) => ['angrepp', 'aggressiv'].includes(typeOf(r))); adjustJournalist(state, debate.journalistId, attacked ? -12 : verdict === 'vann' ? 6 : verdict === 'förlorade' ? -3 : 2, verdict === 'förlorade' ? `${l.name} kunde inte svara om ${ISSUE_BY_ID[issues[0]]?.name.toLowerCase()} i min utfrågning.` : attacked ? `${l.name} gick till angrepp mot mig i studion.` : null); const j = state.journalists[debate.journalistId]; if (j) j.interviews++; }
   if (verdict === 'vann') state.stats.debatesWon++;
   l.fatigue = clamp((l.fatigue || 0) + (debate.kind === 'podd' ? 3 : 6), 0, 100);
+  // känslorna följer med ut ur studion: humör, agg, relationer – och ibland rubriker
+  const opPerson = debate.opponent ? (state.people[debate.opponent.id] || null) : null;
+  const mood = debate.mood || blankMood(); const ev = debate.moodEvents || [];
+  let moodNews = '';
+  if (opPerson) {
+    opPerson.mood = { ...mood }; decayMood(opPerson, .7);
+    recordGrudge(opPerson, mood, state.player.leaderId);
+    if (op) op.relations[mine.id] = clamp((op.relations[mine.id] || 0) - Math.max(0, mood.anger - 30) / 6 - Math.max(0, mood.sad - 40) / 10 + Math.max(0, mood.joy - 30) / 8, -100, 100);
+    if (debate.journalistId) adjustJournalist(state, debate.journalistId, -Math.max(0, mood.anger - 30) / 8 + Math.max(0, mood.joy - 30) / 10, mood.anger > 60 ? `${l.name} gjorde mig rasande i studion.` : mood.joy > 60 ? `${l.name} var genuint trevlig i studion.` : null);
+  }
+  if (ev.some((e) => e.outburst)) { mine.attention = clamp(mine.attention + 8, 0, 100); if (op) { op.credibility = clamp(op.credibility - 3, 0, 100); const ol = state.people[op.leader]; if (ol) ol.debateBonus = (ol.debateBonus || 0) - 3; } moodNews = ` ${opPerson?.name || 'Motståndaren'} tappade fattningen – klippet sprids redan.`; }
+  if (ev.some((e) => e.breakdown)) { mine.trust = clamp((mine.trust ?? 50) - 3, 0, 100); mine.risk = (mine.risk || 0) + 6; moodNews += ` ${opPerson?.name || 'Motståndaren'} bröt ihop, och många tycker att ${l.first} gick för långt.`; }
+  if (ev.some((e) => e.concede)) moodNews += ` Ovanligt nog gav ${opPerson?.name || 'motståndaren'} ${l.first} rätt på en punkt.`;
   const outlet = debate.host === 'riksdag' ? 'svt' : debate.host in MEDIA ? debate.host : 'svt';
-  const h = debate.kind === 'podd' ? (verdict === 'vann' ? `${l.name} charmade ${inf?.name}s lyssnare` : verdict === 'förlorade' ? `${l.name} floppade i ${inf?.name} – "som en pressrelease"` : `${l.name} gästade ${inf?.name}`) : debate.kind === 'interview' ? (verdict === 'vann' ? `${l.name} stod pall i tuff utfrågning` : verdict === 'förlorade' ? `${l.name} i blåsväder efter utfrågning: "Kunde inte svara"` : `Jämn utfrågning av ${l.name}`) : verdict === 'vann' ? `${l.name} vann ${debate.name.toLowerCase()} – ${op?.abbr} pressad` : verdict === 'förlorade' ? `${state.people[op.leader].name} (${op.abbr}) dominerade ${debate.name.toLowerCase()}` : `Oavgjort i ${debate.name.toLowerCase()}`;
+  let h = debate.kind === 'podd' ? (verdict === 'vann' ? `${l.name} charmade ${inf?.name}s lyssnare` : verdict === 'förlorade' ? `${l.name} floppade i ${inf?.name} – "som en pressrelease"` : `${l.name} gästade ${inf?.name}`) : debate.kind === 'interview' ? (verdict === 'vann' ? `${l.name} stod pall i tuff utfrågning` : verdict === 'förlorade' ? `${l.name} i blåsväder efter utfrågning: "Kunde inte svara"` : `Jämn utfrågning av ${l.name}`) : verdict === 'vann' ? `${l.name} vann ${debate.name.toLowerCase()} – ${op?.abbr} pressad` : verdict === 'förlorade' ? `${state.people[op.leader].name} (${op.abbr}) dominerade ${debate.name.toLowerCase()}` : `Oavgjort i ${debate.name.toLowerCase()}`;
+  if (ev.some((e) => e.outburst) && opPerson) h = `${opPerson.name} tappade fattningen mot ${l.name}: "${pick(rnd, ['NU RÄCKER DET', 'Skäms', 'Säg det igen'])}"`;
+  else if (ev.some((e) => e.breakdown) && opPerson) h = `${opPerson.name} bröt ihop i ${debate.kind === 'interview' || debate.kind === 'podd' ? 'studion' : 'debatten'} – kritik mot ${l.name}s ton`;
   const inv = debate.rounds.filter((r) => typeOf(r) === 'invandning' && r.ok).length;
-  addNews(state, { outlet, headline: h, body: `${inv ? `Kvällens ögonblick: ${l.name} avslöjade en motsägelse i ${op?.abbr}:s politik – "${pick(rnd, ['Ni röstade ju tvärtom!', 'Hur går det ihop?'])}". ` : ''}${verdict === 'vann' ? `"${pick(rnd, ['Bästa insatsen på länge', 'Ett genombrott', 'Skarp och påläst'])}", säger kommentatorerna.` : verdict === 'förlorade' ? `${pick(rnd, ['Osäker', 'Svävande', 'Illa förberedd'])} – så beskrivs insatsen.` : 'Ingen av deltagarna lyckades sticka ut.'}`, tags: ['debatt'], partyId: mine.id, importance: debate.campaign ? 3 : 2, tone: verdict === 'vann' ? 1 : verdict === 'förlorade' ? -1 : 0 });
+  addNews(state, { outlet, headline: h, body: `${inv ? `Kvällens ögonblick: ${l.name} avslöjade en motsägelse i ${op?.abbr}:s politik – "${pick(rnd, ['Ni röstade ju tvärtom!', 'Hur går det ihop?'])}". ` : ''}${verdict === 'vann' ? `"${pick(rnd, ['Bästa insatsen på länge', 'Ett genombrott', 'Skarp och påläst'])}", säger kommentatorerna.` : verdict === 'förlorade' ? `${pick(rnd, ['Osäker', 'Svävande', 'Illa förberedd'])} – så beskrivs insatsen.` : 'Ingen av deltagarna lyckades sticka ut.'}${moodNews}`, tags: ['debatt'], partyId: mine.id, importance: debate.campaign || ev.length ? 3 : 2, tone: verdict === 'vann' ? 1 : verdict === 'förlorade' ? -1 : 0 });
   debate.done = true; debate.result = verdict;
-  return { verdict, meter: m, inv };
+  return { verdict, meter: m, inv, mood: moodLabel(mood), moodEvents: ev, opponentName: opPerson?.name || null };
 }

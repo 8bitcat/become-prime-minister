@@ -4,7 +4,8 @@
 import { h, esc, fmt } from '../core/util.js';
 import { characterArt } from '../art/sprites.js';
 import { backgroundSVG } from '../art/backgrounds.js';
-import { buildDebate, resolveOption, resolveFree, finishDebate } from '../sim/debate.js';
+import { buildDebate, resolveOption, resolveFree, finishDebate, addGaffe } from '../sim/debate.js';
+import { moodLabel, moodExpr } from '../sim/emotion.js';
 import { ISSUE_BY_ID } from '../data/issues.js';
 import { MEDIA } from '../data/names.js';
 import { save } from '../core/state.js';
@@ -55,6 +56,7 @@ export function runDebate(state, rnd, opts) {
       <div class="topic" id="topic"></div>
       <div class="meter"><div class="lbl"><span>${esc(opP ? opP.abbr : d.kind === 'podd' ? 'Lyssnarna' : 'Journalisten')}</span><span>${d.kind === 'podd' ? 'LYSSNARNA' : 'PUBLIKEN'}</span><span>${esc(me.abbr)}</span></div><div class="track"><i id="meter"></i></div></div>
       <button class="btn sm skip" id="skip">Hoppa över ⏩</button>
+      <div class="moodchip" id="mood" style="display:none"></div>
       <div class="textbox" id="tb"><div class="name" id="nm"></div><div class="txt" id="txt"></div><div class="next" id="nx">▼</div></div>
       <div class="choices" id="ch" style="display:none"></div>
     </div></div>`;
@@ -62,7 +64,9 @@ export function runDebate(state, rnd, opts) {
     const view = aa.querySelector('.view'), cl = aa.querySelector('#cl'), cr = aa.querySelector('#cr'), tb = aa.querySelector('#tb'), nm = aa.querySelector('#nm'), txt = aa.querySelector('#txt'), nx = aa.querySelector('#nx'), ch = aa.querySelector('#ch'), meterEl = aa.querySelector('#meter'), topicEl = aa.querySelector('#topic');
     const setChar = (side, person, expr, pose, talking = false) => { const el = side === 'left' ? cl : cr; el.innerHTML = characterArt(person, { expr, pose, talking, id: side }); if (side === 'right') el.firstElementChild.style.transform = 'scaleX(-1)'; };
     const setMeter = () => { const m = d.meter; meterEl.className = m < 0 ? 'neg' : ''; meterEl.style.left = m < 0 ? `${50 + m / 2}%` : '50%'; meterEl.style.width = `${Math.abs(m) / 2}%`; };
-    setMeter();
+    const moodEl = aa.querySelector('#mood');
+    const updateMood = () => { const l = moodLabel(d.mood); moodEl.style.display = l.level ? '' : 'none'; moodEl.textContent = l.level ? `${l.emoji} ${op.first || op.name}: ${l.label}` : ''; };
+    setMeter(); updateMood();
     let skipAll = false, typing = null, waiting = null;
     aa.querySelector('#skip').addEventListener('click', () => { skipAll = true; if (waiting) waiting(); });
     // skrivmaskin
@@ -121,7 +125,10 @@ export function runDebate(state, rnd, opts) {
       const playRound = async (r, i, total, label) => {
         const is = ISSUE_BY_ID[r.issue];
         topicEl.innerHTML = `${label || `Runda ${i + 1}/${total}`}: ${esc(is.name)}<small>${esc(d.name)}</small>`;
-        await say('right', op, r.statement, { expr: r.podd ? 'happy' : r.interrupt ? 'angry' : r.interview ? 'neutral' : r.opExpr, pose: r.podd ? 'open' : r.interrupt ? 'point' : r.interview ? 'think' : i % 2 ? 'point' : 'cross' });
+        // en upprörd eller nervös motståndare gör fler misstag – ibland en siffra som går att avslöja
+        if (!r.gaffe && !r.interview && !r.podd && !r.interrupt && !r.followed && d.gaffeBoost && rnd() < d.gaffeBoost) addGaffe(state, rnd, r, op);
+        const mx = moodExpr(d.mood, r.podd ? 'happy' : r.interrupt ? 'angry' : r.interview ? 'neutral' : r.opExpr, r.podd ? 'open' : r.interrupt ? 'point' : r.interview ? 'think' : i % 2 ? 'point' : 'cross');
+        await say('right', op, r.statement, { expr: mx.expr, pose: mx.pose });
         const ans = await compose(r, { prompt: r.interrupt ? 'Snabb replik' : r.followed ? 'Följdfrågan' : 'Ditt svar', short: !!r.interrupt });
         let out;
         if (ans.option != null) {
@@ -130,20 +137,21 @@ export function runDebate(state, rnd, opts) {
           out = resolveOption(state, rnd, d, d.rounds.indexOf(r), ans.option);
           await say('left', ml, o.text, { expr: 'objection', pose: out.myPose });
         } else {
-          const a = await analyze(state, ans.text, { question: r.statement, questionIssue: r.issue });
+          const a = await analyze(state, ans.text, { question: r.statement, questionIssue: r.issue, opponentPartyId: opP?.id || null, counterpart: op.name });
           if (ans.noComment) { a.dominant = 'undvikande'; a.answers = 0; }
           out = resolveFree(state, rnd, d, d.rounds.indexOf(r), ans.text, a);
           if (out.caught) { await burst('INVÄNDNING!'); flash(); if (out.evidence) showEvidence(out.evidence); }
           else if (a.dominant === 'aggressiv') await burst('VÄNTA LITE!', 'blue');
           await say('left', ml, ans.text, { expr: out.caught ? 'objection' : expFor(a.dominant), pose: out.myPose });
           // motståndarens/journalistens svar skrivs utifrån vad du faktiskt sa
-          if (!r.interview && !r.podd && opP) { const rep = await opponentReply(state, rnd, { opponentParty: opP, opponent: op, playerText: ans.text, analysis: { ...a, contradictions: out.contradictions }, issue: r.issue, statement: r.statement }); if (rep) out.reply = rep; }
+          if (!r.interview && !r.podd && opP && !out.moodEff?.outburst && !out.moodEff?.breakdown && !out.moodEff?.concede) { const rep = await opponentReply(state, rnd, { opponentParty: opP, opponent: op, playerText: ans.text, analysis: { ...a, contradictions: out.contradictions }, issue: r.issue, statement: r.statement, mood: out.mood, moodRaw: d.mood }); if (rep) out.reply = rep; }
           else { const fu = await followUp(state, rnd, { question: r.statement, answer: ans.text, analysis: { ...a, contradictions: out.contradictions }, journalist: j, issue: r.issue, kind: d.kind }); if (fu) out.reply = fu; }
         }
-        setMeter();
+        setMeter(); updateMood();
         if (out.ok && out.delta > 15) { flash(); sting('win'); } else if (!out.ok) sting('lose');
+        if (out.moodEff?.outburst) { await burst('UTBROTT!', 'blue'); } else if (out.moodEff?.breakdown) sting('lose');
         await say('right', op, out.reply, { expr: out.opExpr, pose: out.opPose });
-        const extra = out.contradictions?.length ? ` Motsägelse noterad: ${out.contradictions[0]}` : out.wrongClaims ? ' En siffra var fel – det blir en faktakoll.' : '';
+        const extra = (out.contradictions?.length ? ` Motsägelse noterad: ${out.contradictions[0]}` : out.wrongClaims ? ' En siffra var fel – det blir en faktakoll.' : '') + (out.moodNote ? ` ${out.moodNote}` : '') + (out.audienceDelta ? ` (publiken ${out.audienceDelta > 0 ? '+' : ''}${fmt(out.audienceDelta, 0)})` : '');
         await say(null, { name: out.ok ? '✓ ' + out.narration : '✗ ' + out.narration }, (out.ok ? `Poäng till ${me.abbr}. (${out.delta > 0 ? '+' : ''}${fmt(out.delta, 0)})` : `Det där gick inte hem. (${fmt(out.delta, 0)})`) + extra, { dim: false });
         // följdfråga (intervju/podd) eller avbrott (debatt)
         if (out.followUp && !skipAll) {
@@ -165,7 +173,7 @@ export function runDebate(state, rnd, opts) {
       setChar('right', op, res.verdict === 'vann' ? 'nervous' : res.verdict === 'förlorade' ? 'smug' : 'neutral', 'stand'); cr.classList.remove('dim');
       const tones = d.rounds.filter((r) => r.analysis).map((r) => r.analysis.dominant);
       const box = h('div', { class: 'result' });
-      box.innerHTML = `<div class="box"><h2>${res.verdict === 'vann' ? '🏆 Du vann debatten!' : res.verdict === 'förlorade' ? '😓 Du förlorade debatten' : '🤝 Oavgjort'}</h2><p>Publikmätaren slutade på <b>${res.meter > 0 ? '+' : ''}${fmt(res.meter, 0)}</b>.${res.inv ? ` Du avslöjade ${res.inv} motsägelse${res.inv > 1 ? 'r' : ''} eller felaktig${res.inv > 1 ? 'a' : ''} siffr${res.inv > 1 ? 'or' : 'a'}!` : ''}</p>${tones.length ? `<p class="muted">Din ton: ${tones.map(toneLabel).join(', ')}.${d.rounds.some((r) => r.analysis?.contradictions) ? ' Journalisterna noterade motsägelser mot vad du sagt tidigare.' : ''}${d.rounds.some((r) => r.analysis?.promises) ? ' Nya löften har registrerats – de följs upp.' : ''}</p>` : ''}<p class="muted">${res.verdict === 'vann' ? 'Partiledarens stöd, partiets uppmärksamhet och opinionen bland dem som bryr sig om frågorna stärks.' : res.verdict === 'förlorade' ? 'Medierna skriver om en svag insats. Opinionen tappar något.' : 'Ingen avgörande effekt – men du syntes.'}</p><button class="btn gold big" id="ok">Fortsätt</button></div>`;
+      box.innerHTML = `<div class="box"><h2>${res.verdict === 'vann' ? '🏆 Du vann debatten!' : res.verdict === 'förlorade' ? '😓 Du förlorade debatten' : '🤝 Oavgjort'}</h2><p>Publikmätaren slutade på <b>${res.meter > 0 ? '+' : ''}${fmt(res.meter, 0)}</b>.${res.inv ? ` Du avslöjade ${res.inv} motsägelse${res.inv > 1 ? 'r' : ''} eller felaktig${res.inv > 1 ? 'a' : ''} siffr${res.inv > 1 ? 'or' : 'a'}!` : ''}</p>${res.opponentName && res.mood ? `<p>${esc(res.opponentName)} lämnade ${d.kind === 'interview' || d.kind === 'podd' ? 'studion' : 'debatten'} <b>${esc(res.mood.label)}</b> ${res.mood.emoji}.${res.moodEvents.some((e) => e.outburst) ? ' Utbrottet blir ett klipp – och ett agg.' : ''}${res.moodEvents.some((e) => e.breakdown) ? ' Sammanbrottet slår tillbaka mot dig.' : ''}${res.moodEvents.some((e) => e.concede) ? ' Hen gav dig rätt på en punkt.' : ''}</p>` : ''}${tones.length ? `<p class="muted">Din ton: ${tones.map(toneLabel).join(', ')}.${d.rounds.some((r) => r.analysis?.contradictions) ? ' Journalisterna noterade motsägelser mot vad du sagt tidigare.' : ''}${d.rounds.some((r) => r.analysis?.promises) ? ' Nya löften har registrerats – de följs upp.' : ''}</p>` : ''}<p class="muted">${res.verdict === 'vann' ? 'Partiledarens stöd, partiets uppmärksamhet och opinionen bland dem som bryr sig om frågorna stärks.' : res.verdict === 'förlorade' ? 'Medierna skriver om en svag insats. Opinionen tappar något.' : 'Ingen avgörande effekt – men du syntes.'}</p><button class="btn gold big" id="ok">Fortsätt</button></div>`;
       view.append(box);
       box.querySelector('#ok').addEventListener('click', () => { aa.remove(); resolve(res); });
     })();

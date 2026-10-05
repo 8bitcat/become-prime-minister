@@ -103,7 +103,9 @@ export function newGame({ seed = Date.now() % 2147483647, mode, takeoverId, part
     memory: { statements: [], persona: { saklig: 0, kampande: 0, aggressiv: 0, humor: 0, kansla: 0, undvikande: 0, n: 0 }, promises: [], corrections: 0 }, secretDeals: [],
   };
   if (partyDef?.manifesto) { playerParty.manifesto = partyDef.manifesto; playerParty.ideologyName = partyDef.ideologyName || null; }
+  if (partyDef?.logoImage) playerParty.logoImage = partyDef.logoImage;
   if (leaderDef.sprite) leader.sprite = leaderDef.sprite;
+  if (leaderDef.spriteLook) leader.spriteLook = { ...leaderDef.spriteLook };
   for (const p of Object.values(parties)) { p.program = programFromAxes(p.pos); if (!p.isPlayer || mode === 'takeover') syncAxes(p); else { /* nytt parti: programmet härleds ur den valda ideologin */ syncAxes(p); } }
   for (const p of Object.values(parties)) { state.opinion.awareness[p.id] = p.inRiksdag ? 1 : 0.004; state.history.leaders.push({ personId: p.leader, partyId: p.id, name: people[p.leader].name, from: people[p.leader].since || { ...START_DATE }, to: null, reason: null }); }
   for (const j of Object.values(state.journalists)) { people[j.person.id] = j.person; delete j.person; j.personId = Object.keys(people).find((id) => people[id].name === j.name); }
