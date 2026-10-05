@@ -14,7 +14,7 @@ import { adviserLine } from '../scene/debate.js';
 import { pressQuestions, pressAnswer, pressSummary, speechOutcome, privateTalk, focusGroup } from '../sim/talk.js';
 import { llmSettings, saveLlmSettings, MODELS, llmPing, resetClient, llmEnabled, llmReplies } from '../ai/llm.js';
 import { loadSmart, smartStatus } from '../ai/embed.js';
-import { LOCAL_MODELS, localSettings, saveLocalSettings, localStatus, onLocalStatus, loadLocal, unloadLocal, probeDevice, localModelInfo } from '../ai/local.js';
+import { LOCAL_MODELS, localSettings, saveLocalSettings, localStatus, onLocalStatus, loadLocal, unloadLocal, probeDevice, localModelInfo, probeServer, connectServer, disconnectServer, pickServerModel, localVia, DEFAULT_SERVER } from '../ai/local.js';
 import { characterArt } from '../art/sprites.js';
 import { activeParties } from '../sim/opinion.js';
 import { MINISTRIES } from '../sim/government.js';
@@ -226,6 +226,11 @@ export function aiSettingsDialog() {
   const st = llmSettings(); const ls = localSettings();
   const body = h('div', {});
   body.innerHTML = `<p class="help"><b>Spelets AI</b> är en språkmodell som körs helt på din egen dator, i webbläsaren. Den förstår allt du skriver och låter motståndare, journalister, väljare och din stab svara med egna ord. Ingen nyckel, ingen kostnad, inget skickas någonstans. Modellen laddas ned en gång och sparas sedan i webbläsaren. Den kräver WebGPU (Chrome, Edge eller Safari 26) och fungerar bäst med ett eget grafikkort.</p>
+    <div class="card" id="srvBox" style="margin:10px 0"><b>🖥️ Modellen i Ollama på din dator</b> <small class="muted">(snabbare och större modeller)</small>
+      <p class="help" style="margin:6px 0">Har du <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a> på datorn kan spelet använda den i stället för webbläsarmodellen – t.ex. Gemma 4 12B eller Qwen3.5 9B. Inget lämnar din dator och ingen nyckel behövs. Ollama måste tillåta spelets adress: miljövariabeln <code>OLLAMA_ORIGINS</code> ska innehålla <code>${esc(location.origin)}</code>.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><input type="text" id="srvUrl" value="${esc(ls.server.url || DEFAULT_SERVER)}" style="flex:1;min-width:200px" aria-label="Ollamas adress"><select id="srvModel" aria-label="Modell i Ollama">${ls.server.model ? `<option value="${esc(ls.server.model)}">${esc(ls.server.model)}</option>` : '<option value="">(sök först)</option>'}</select><button class="btn sm" id="srvFind">Sök modeller</button><button class="btn sm gold" id="srvConn">Anslut</button><button class="btn sm" id="srvOff">Koppla från</button></div>
+      <div id="srvRes" class="help" style="margin-top:6px"></div></div>
+    <div class="muted" style="margin:6px 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.05em">Eller i webbläsaren</div>
     <div id="dev" class="help">Kontrollerar din dator …</div>
     <div class="pick" id="models" style="margin-top:8px"></div>
     <div class="row" style="margin-top:10px;gap:8px"><button class="btn gold" id="loadAi">Starta spelets AI</button><button class="btn" id="stopAi">Stäng av</button></div>
@@ -242,19 +247,24 @@ export function aiSettingsDialog() {
   const models = body.querySelector('#models');
   const drawModels = (rec) => { models.innerHTML = ''; for (const m of LOCAL_MODELS) { const o = h('div', { class: 'opt ' + ((chosen || rec) === m.id ? 'on' : '') }); o.innerHTML = `<b>${esc(m.name)}${m.id === rec ? ' · rekommenderas' : ''}</b><small>${esc(m.size)} · ${esc(m.desc)}</small>`; o.addEventListener('click', () => { chosen = m.id; drawModels(rec); }); models.append(o); } };
   const res = body.querySelector('#aiRes'); const barW = body.querySelector('#aiBarWrap'); const bar = body.querySelector('#aiBar'); const pct = body.querySelector('#aiPct');
-  const show = (s) => { if (s.state === 'laddar') { barW.style.display = ''; bar.style.width = s.progress + '%'; pct.textContent = s.progress + ' %'; res.textContent = s.text || ''; } else if (s.state === 'klar') { barW.style.display = 'none'; res.innerHTML = `<span class="ok">Spelets AI är igång (${esc(localModelInfo()?.name || s.model)}).</span>`; } else if (s.state === 'fel') { barW.style.display = 'none'; res.innerHTML = `<span class="danger">Kunde inte starta: ${esc(s.text)}</span>`; } else { barW.style.display = 'none'; res.textContent = 'Spelets AI är avstängd – den inbyggda analysen används.'; } };
+  const show = (s) => { if (s.state === 'laddar') { barW.style.display = ''; bar.style.width = s.progress + '%'; pct.textContent = s.progress + ' %'; res.textContent = s.text || ''; } else if (s.state === 'klar') { barW.style.display = 'none'; res.innerHTML = `<span class="ok">Spelets AI är igång (${esc(localModelInfo()?.name || s.model)}).</span>`; srvRes.innerHTML = localVia() === 'server' ? `<span class="ok">Ansluten: ${esc(s.model)} körs i Ollama på din dator.</span>` : ''; } else if (s.state === 'fel') { barW.style.display = 'none'; res.innerHTML = `<span class="danger">Kunde inte starta: ${esc(s.text)}</span>`; } else { barW.style.display = 'none'; res.textContent = 'Spelets AI är avstängd – den inbyggda analysen används.'; } };
+  const srvRes = body.querySelector('#srvRes'); const srvSel = body.querySelector('#srvModel'); const srvUrl = body.querySelector('#srvUrl');
+  const findModels = async () => { srvRes.textContent = 'Söker …'; try { const { models } = await probeServer(srvUrl.value); if (!models.length) { srvRes.innerHTML = '<span class="danger">Ollama är igång men har ingen modell. Kör t.ex. <code>ollama pull gemma4:12b</code>.</span>'; return null; } const pick = pickServerModel(models, srvSel.value); srvSel.innerHTML = models.map((m) => `<option value="${esc(m.id)}" ${m.id === pick ? 'selected' : ''}>${esc(m.id)}${m.params ? ' · ' + esc(m.params) : ''}</option>`).join(''); srvRes.innerHTML = `<span class="ok">Hittade ${models.length} modell${models.length > 1 ? 'er' : ''}.</span>`; return pick; } catch (e) { srvRes.innerHTML = `<span class="danger">${esc(e.message)}</span>`; return null; } };
+  body.querySelector('#srvFind').addEventListener('click', findModels);
+  body.querySelector('#srvConn').addEventListener('click', async () => { if (!srvSel.value) { const p = await findModels(); if (!p) return; } srvRes.textContent = 'Ansluter …'; connectServer(srvUrl.value, srvSel.value).catch((e) => { srvRes.innerHTML = `<span class="danger">${esc(e.message)}</span>`; }); });
+  body.querySelector('#srvOff').addEventListener('click', () => { if (localVia() === 'server') disconnectServer(); else saveLocalSettings({ server: { ...localSettings().server, on: false } }); srvRes.textContent = 'Frånkopplad.'; });
   show(localStatus());
   const off = onLocalStatus(show);
   probeDevice().then((d) => { body.querySelector('#dev').innerHTML = d.ok ? `Grafikkort: <b>${esc([d.vendor, d.arch].filter(Boolean).join(' ') || 'okänt')}</b>${d.mobile ? ' (mobil)' : ''} – fungerar.` : `<span class="danger">${esc(d.reason || 'WebGPU saknas')}</span> Spelet fungerar ändå, med den inbyggda analysen.`; drawModels(d.recommended || LOCAL_MODELS[1].id); if (!chosen) chosen = d.recommended; body.querySelector('#loadAi').disabled = !d.ok; });
-  body.querySelector('#loadAi').addEventListener('click', () => { const id = chosen || LOCAL_MODELS[0].id; saveLocalSettings({ enabled: true, model: id, asked: true }); loadLocal(id).catch(() => {}); });
-  body.querySelector('#stopAi').addEventListener('click', () => { saveLocalSettings({ enabled: false }); unloadLocal(); });
+  body.querySelector('#loadAi').addEventListener('click', () => { const id = chosen || LOCAL_MODELS[0].id; if (localVia() === 'server') disconnectServer(); saveLocalSettings({ enabled: true, model: id, asked: true, server: { ...localSettings().server, on: false } }); loadLocal(id).catch(() => {}); });
+  body.querySelector('#stopAi').addEventListener('click', () => { saveLocalSettings({ enabled: false, server: { ...localSettings().server, on: false } }); unloadLocal(); });
   const readIn = () => ({ ...llmSettings(), enabled: body.querySelector('#en').checked, key: body.querySelector('#key').value.trim(), model: body.querySelector('#model').value });
   body.querySelector('#testKey').addEventListener('click', async (e) => { const btn = e.target; saveLlmSettings({ ...readIn(), enabled: true }); resetClient(); btn.disabled = true; body.querySelector('#res').textContent = 'Testar…'; try { await llmPing(); body.querySelector('#res').innerHTML = '<span class="ok">Fungerar!</span>'; } catch (err) { body.querySelector('#res').innerHTML = `<span class="danger">Misslyckades: ${esc(err.message)}</span>`; } saveLlmSettings(readIn()); btn.disabled = false; });
   modal({ title: '🧠 Spelets AI', body, wide: true, onClose: off, buttons: [{ label: 'Klar', cls: 'gold', onClick: () => { saveLlmSettings(readIn()); resetClient(); off(); } }] });
 }
 // Första gången: erbjud att starta spelets AI (bara om datorn klarar det)
 export async function offerLocalAi() {
-  const ls = localSettings(); if (ls.asked || localStatus().state !== 'av') return;
+  const ls = localSettings(); if (ls.asked || ls.server.on || localStatus().state !== 'av') return;
   const d = await probeDevice(); if (!d.ok) { saveLocalSettings({ asked: true }); return; }
   const rec = LOCAL_MODELS.find((m) => m.id === d.recommended) || LOCAL_MODELS[1];
   const i = await choice({ title: '🧠 Starta spelets AI?', text: `<p>Spelet har en egen språkmodell som körs på din dator. Med den förstår spelet allt du skriver, och motståndare, journalister, väljare och din stab svarar med egna ord – som ett riktigt samtal. Ingen nyckel och ingen kostnad.</p><p>Din dator klarar <b>${esc(rec.name)}</b>. Den laddas ned en gång (${esc(rec.size)}) och sparas i webbläsaren. Du kan spela medan den laddas.</p>`, choices: [{ label: `Ja, starta spelets AI (${rec.size})`, cls: 'gold', desc: 'Rekommenderas' }, { label: 'Välj storlek själv …', desc: 'Öppnar inställningarna' }, { label: 'Inte nu', desc: 'Kan slås på senare under ☰ Meny → Spelets AI' }] });
@@ -263,7 +273,12 @@ export async function offerLocalAi() {
   else if (i === 1) aiSettingsDialog();
 }
 // Starta automatiskt om spelaren har slagit på den tidigare (går fort när modellen redan är sparad)
-export function autoStartLocalAi() { const ls = localSettings(); if (ls.enabled && ls.model && localStatus().state === 'av') loadLocal(ls.model).catch(() => {}); }
+// Ollama på datorn går först; svarar den inte används webbläsarmodellen om den är påslagen.
+export function autoStartLocalAi() {
+  const ls = localSettings(); if (localStatus().state !== 'av') return;
+  const browser = () => { if (ls.enabled && ls.model) loadLocal(ls.model).catch(() => {}); };
+  if (ls.server.on) connectServer(ls.server.url, ls.server.model).catch(browser); else browser();
+}
 
 
 // ---------- KALENDERN: tal i Sälen, Järva, Almedalen – och regeringsförklaringen ----------

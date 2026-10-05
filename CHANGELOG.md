@@ -7,6 +7,13 @@ git-tagg (`v0.1.0` osv.).
 
 <!-- släpp: tools/release.mjs lägger nya versioner direkt under denna rad -->
 
+## [0.8.0] – 2026-10-05 – Modellen på din egen dator
+- Spelets AI kan nu köras i Ollama på din egen dator i stället för i webbläsaren: större och snabbare modeller, fortfarande utan nyckel och utan att något lämnar datorn. Testat med Gemma 4 12B (förval – uppfattar nyanser bäst, t.ex. ironi, ca 4 sekunder per analys) och Qwen3.5 9B (snabbast, ca 2 sekunder). Båda klarar spelets analystest 8 av 8 och hela speltestet (staben, politik med egna ord, kommentarsfält, debatt) 9 av 9.
+- Anslut under ☰ Meny → Spelets AI → Sök modeller → Anslut, eller öppna spelet med ?ollama. Valet sparas och spelet ansluter av sig självt nästa gång. Svarar inte Ollama används webbläsarmodellen eller den inbyggda analysen. En annan dator i hemmet nås med ?ollama=http://datorns-adress:11434.
+- Tydliga besked om något saknas: om Ollama inte är igång, om den inte tillåter spelets adress (OLLAMA_ORIGINS) eller om ingen modell är hämtad.
+- Bättre analys för alla modeller: tydligare exempel på vilka ord som hör till vilken fråga (invandring och utvisning = migration, elpris och vindkraft = energi) och när partiets riktning ska anges. JSON-svaren från Ollama körs utan upprepningsstraff, som annars hindrade modellen från att återanvända ord den just skrivit.
+- Nytt verktyg: tools/ollama-lab.mjs jämför modeller i Ollama på spelets egna uppgifter; tools/ai-test.mjs kan spela mot Ollama (ollama:modell).
+
 ## [0.7.0] – 2026-10-05 – Från anarkism till totalitarism
 - Hela skalan när du skapar parti: politiksteget är ombyggt. Kompassens nio axlar går nu ända ut – Makt från anarkism till totalitarism, Ekonomi från planekonomi till anarkokapitalism, Omvärld från inga gränser och världsstat till stängda gränser och isolationism, Säkerhet från total nedrustning till krigsekonomi, Religion från statsateism till teokrati, Miljö från planerad nerväxt till tillväxt till varje pris. De tolv sakfrågorna likaså – migration går från inga gränser alls till storskalig återvandring. Dra ett reglage och partiprogrammet skrivs om på alla områden som hör till axeln; förbi den röda markeringen öppnas ytterlighetsalternativen.
 - Eget antal, exakt: alla 340 politikområden kan ställas in direkt i partiskaparen – sök, bläddra per domän eller filtrera (skiljer sig från lagen, har ytterligheter, valda ytterligheter, grundlag). Varje reglage har en sifferruta för egna värden: återvandring 0–500 000 personer per år, asylmottagande upp till 400 000, försvarsbudget ned till noll. Samma sifferruta finns på Politiken-sidan i spelet.

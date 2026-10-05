@@ -1,6 +1,7 @@
 // Spelets AI på riktigt: kör spelet i Chromium med WebGPU, startar den lokala språkmodellen och spelar
 // igenom staben, en debattreplik, ett inlägg och politik med egna ord. Kräver grafikkort.
 //   node tools/ai-test.mjs [modell-id]   (servern på http://localhost:8790; annan port: SMOKE_PORT)
+//   node tools/ai-test.mjs ollama:gemma4:12b   (modellen i Ollama på den här datorn i stället för WebGPU)
 // Modellen cachas i tools/out/llm-profile (laddas ned första gången).
 import { createRequire } from 'node:module';
 const require = createRequire('D:/Qisy/QISYFrontend/QISYFrontend-1/package.json');
@@ -25,7 +26,8 @@ await page.evaluate(async () => {
 await page.goto(`http://localhost:${PORT}/?slot=1&noai`); await sleep(1200);
 console.log(`Startar ${MODEL} …`);
 const t0 = Date.now();
-await page.evaluate((m) => window.BPM_AI.loadLocal(m), MODEL);
+if (MODEL.startsWith('ollama:')) await page.evaluate((m) => window.BPM_AI.connectServer('http://localhost:11434', m), MODEL.slice(7));
+else await page.evaluate((m) => window.BPM_AI.loadLocal(m), MODEL);
 ok(await page.evaluate(() => window.BPM_AI.localReady()), `spelets AI igång på ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 ok((await page.locator('#aichip').textContent()).includes('AI'), 'AI-indikatorn i toppraden');
 // --- staben ---

@@ -88,6 +88,7 @@ await shot('06-partiet');
 await page.click('#menu'); await sleep(200); await page.locator('.modal .btn', { hasText: 'Spelets AI' }).click(); await sleep(600);
 ok(await page.locator('.modal #models .opt').count() >= 3 && await page.locator('.modal #loadAi').count() === 1, 'spelets AI: modellstorlekar och startknapp'); await shot('07-ai');
 ok(await page.locator('.modal details #key').count() === 1, 'Claude ligger som dolt tillval');
+ok(await page.locator('.modal #srvBox #srvUrl').count() === 1 && await page.locator('.modal #srvConn').count() === 1, 'Ollama på den egna datorn kan anslutas');
 await page.locator('.modal .mf .btn.gold').last().click(); await sleep(200);
 ok(await page.locator('#aichip').count() === 1, 'AI-indikatorn finns i toppraden');
 // --- Staben: prata fritt (utan modell: svar byggda på läget) ---

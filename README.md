@@ -23,6 +23,23 @@ under ☰ Meny → Spelets AI (spelet föreslår rätt storlek för din dator). 
 den inbyggda analysen: en kunskapsbas med nära 2 000 svenska formuleringar som matchas mening
 för mening. Claude med egen nyckel finns kvar som dolt tillval och används aldrig annars.
 
+**Modellen i Ollama på den egna datorn** (snabbare och större modeller än i webbläsaren, fortfarande
+utan nyckel och utan att något lämnar datorn). Testat med Gemma 4 12B (förval, bäst nyanser, ca 4 s
+per analys) och Qwen3.5 9B (snabbast, ca 2 s) på ett RTX 4070 – båda klarar spelets analystest 8/8.
+
+```powershell
+winget install Ollama.Ollama
+setx OLLAMA_ORIGINS "https://8bitcat.github.io,http://localhost:*,http://127.0.0.1:*"
+# starta om Ollama (avsluta i systemfältet och öppna igen) så att den läser in OLLAMA_ORIGINS
+ollama pull gemma4:12b      # eller qwen3.5:9b
+```
+
+Öppna sedan spelet med `?ollama` (https://8bitcat.github.io/become-prime-minister/?ollama) eller
+välj ☰ Meny → Spelets AI → Sök modeller → Anslut. Valet sparas, och spelet ansluter av sig självt
+nästa gång; svarar inte Ollama används webbläsarmodellen eller den inbyggda analysen. Annan dator i
+hemmet: `?ollama=http://datorns-ip:11434` (Ollama måste då lyssna på nätverket, `OLLAMA_HOST=0.0.0.0`).
+Gemma 4 körs utan utkastmodell (`draft_num_predict: 0`) – med den kraschar Ollama 0.35 på Windows.
+
 **Staben**: prata fritt med stabschefen, pressekreteraren, partisekreteraren och chefsekonomen
 – de känner hela läget i spelet. **Politik med egna ord**: skriv vad partiet vill, spelet
 översätter det till konkreta värden i programmet. **Den politiska kalendern**: Folk och Försvar,
@@ -127,6 +144,8 @@ python tools/slice-chars.py      # skiva arken till assets/chars/<id>/<pose>.web
 python tools/mask-chars.py       # segmentera figurerna i färgbara delar (labels-<pose>.png + färger i manifestet)
 node tools/embed-kb.mjs          # förberäkna kunskapsbasens inbäddningar (kräver npm i i tools/embed)
 node tools/llm-lab.mjs <modell…> # jämför lokala språkmodeller på spelets uppgifter (WebGPU, Chromium)
+node tools/ollama-lab.mjs gemma4:12b qwen3.5:9b  # samma jämförelse mot modeller i Ollama
+node tools/ai-test.mjs ollama:gemma4:12b         # spela igenom staben, inlägg och debatt mot Ollama
 node tools/ai-test.mjs [modell]  # spela med spelets AI igång: staben, inlägg, debatt, politik med egna ord
 node tools/opinion-check.mjs 6   # hur stabil är opinionen över flera passiva fyraårsperioder?
 node tools/ideo-check.mjs        # kalibreringen mellan partiprogram och ideologier

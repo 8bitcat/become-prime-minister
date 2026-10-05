@@ -104,7 +104,7 @@ function paintAiChip(el) {
   const st = localStatus();
   el.className = 'btn sm aichip ' + (st.state === 'klar' ? 'on' : st.state === 'laddar' ? 'load' : st.state === 'fel' ? 'err' : '');
   el.textContent = st.state === 'klar' ? (st.busy ? '🧠 tänker …' : '🧠 AI') : st.state === 'laddar' ? `🧠 ${st.progress} %` : st.state === 'fel' ? '🧠 fel' : '🧠 av';
-  el.title = st.state === 'klar' ? 'Spelets AI är igång – klicka för inställningar' : st.state === 'laddar' ? `Spelets AI laddas: ${st.text || ''}` : 'Spelets AI är avstängd – klicka för att starta';
+  el.title = st.state === 'klar' ? (st.via === 'server' ? `Spelets AI körs i Ollama på din dator (${st.model}) – klicka för inställningar` : 'Spelets AI är igång – klicka för inställningar') : st.state === 'laddar' ? `Spelets AI laddas: ${st.text || ''}` : 'Spelets AI är avstängd – klicka för att starta';
 }
 document.addEventListener('bpm:localai', () => { paintAiChip(document.getElementById('aichip')); if (localStatus().state === 'klar' && UI.page === 'stab' && !UI.busy && !document.querySelector('.modal, .aa')) { const ta = document.querySelector('.chatin textarea'); if (!ta || !ta.value) renderShell(); } });
 

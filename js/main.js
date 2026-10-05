@@ -32,6 +32,8 @@ const params = new URLSearchParams(location.search);
 const saves = listSaves();
 // Rollgalleriet (tecknade figurer) laddas först – SVG-dockan är reserv om det saknas
 await loadSprites();
+// ?ollama (eller ?ollama=http://dator:11434): använd modellen i Ollama på den egna datorn från och med nu
+if (params.has('ollama')) localAi.saveLocalSettings({ asked: true, server: { on: true, url: params.get('ollama') || localAi.DEFAULT_SERVER, model: localAi.localSettings().server.model } });
 // Spelets AI startar av sig själv om spelaren har slagit på den tidigare (snabbt när modellen redan är sparad)
 if (!params.has('noai')) autoStartLocalAi();
 if (params.get('slot') && !saves[+params.get('slot') - 1]?.empty) startSlot(+params.get('slot'));
