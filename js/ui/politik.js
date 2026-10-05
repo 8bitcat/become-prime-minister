@@ -7,6 +7,7 @@ import { isPlayerPM } from '../sim/government.js';
 import { activeParties } from '../sim/opinion.js';
 import { aiVote } from '../sim/riksdag.js';
 import { ACTIONS } from '../sim/turn.js';
+import { policyTextCard } from './policytext.js';
 
 const me = (s) => s.parties[s.player.partyId];
 
@@ -28,6 +29,7 @@ export function pagePolitik(s, ui, tab = 'migration') {
     }
     tabs.append(h('div', { class: 'dgl' }, g.name), row);
   }
+  el.append(policyTextCard(s, ui));
   el.append(tabs);
   const changes = {};
   const list = h('div', { class: 'list' });

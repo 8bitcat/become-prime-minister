@@ -153,12 +153,13 @@ function aiPartyWeek(state, rnd) {
 function aiPartyMonth(state, rnd) {
   for (const q of activeParties(state)) {
     if (q.isPlayer) continue;
-    // glid mot de egna väljarnas ideal – genom att nudga programmet (ideologin härleds ur politiken)
-    const delta = {};
+    // glid försiktigt mot de egna väljarnas ideal – men förankrat i partiets egen linje (identitet,
+    // medlemmar, kongressbeslut): jämvikten ligger till ca 85 % kvar vid den ursprungliga positionen
+    const delta = {}; const anchor = q.posStart || q.pos;
     for (const is of ISSUES) {
       let ideal = 0, w = 0;
       for (const sg of SEGMENTS) { const sh = (state.opinion.seg[sg.id]?.[q.id] || 0) * sg.share; ideal += sg.ideal[is.id] * sh; w += sh; }
-      if (w) delta[is.id] = ((ideal / w) - q.pos[is.id]) * .015;
+      if (w) delta[is.id] = ((ideal / w) - q.pos[is.id]) * .005 + ((anchor[is.id] ?? q.pos[is.id]) - q.pos[is.id]) * .03;
     }
     if (q.program) aiProgramDrift(state, rnd, q, delta); else for (const k in delta) q.pos[k] = clamp(q.pos[k] + delta[k], -100, 100);
     const l = state.people[q.leader];

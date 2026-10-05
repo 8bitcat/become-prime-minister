@@ -69,6 +69,11 @@ await page.fill('.chatin textarea', 'Hur klarar vi spärren inför valet?'); awa
 ok(await page.evaluate(() => (window.BPM.G.state.chats?.stab || []).length === 2), 'staben svarar'); await shot('08-staben');
 await page.locator('.tabs button', { hasText: 'Chefsekonomen' }).click(); await sleep(300);
 ok(await page.locator('.chatcard').count() === 1, 'flera rådgivare i staben');
+// --- Politiken: skriv politik med egna ord, 26 domäner ---
+await page.locator('.sidenav button', { hasText: 'Politiken' }).click(); await sleep(500);
+await page.fill('#ptext', 'Sänk bensinskatten. Höj skatten för de rikaste och bygg ny kärnkraft.'); await page.click('#ptolka'); await sleep(800);
+ok(await page.locator('#pres .item').count() >= 2, `politik med egna ord ger ändringar (${await page.locator('#pres .item').count()})`); await shot('09-politik-text');
+ok(await page.locator('.tabs.domtabs button').count() >= 26, `politiken har ${await page.locator('.tabs.domtabs button').count()} domäner`);
 console.log(errs.length ? 'FEL:\n' + errs.join('\n') : 'Inga konsolfel.');
 console.log(`${pass} gröna, ${fail} röda`); if (errs.length) { console.log('  ✗ inga pageerror/console.error'); }
 await browser.close(); process.exit(fail || errs.length ? 1 : 0);

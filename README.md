@@ -14,12 +14,19 @@ utspel, förhandlingsbud, erbjudanden i regeringsbildningen och enskilda samtal 
 text. Spelet läser vad du faktiskt skrev (ton, sakfrågor, om du svarar på frågan, löften med
 siffror, faktapåståenden, angrepp, motsägelser mot vad du sagt förr) och låter världen reagera:
 kommentarsfält, följdfrågor, avbrott, faktakoll, läckor, framgrävda uttalanden och löfteskoll.
-Analysen är inbyggd och fungerar utan nätverk: en kunskapsbas med över 1 300 svenska
-formuleringar matchas mening för mening (böjningar, stavfel och fria formuleringar fångas).
-Under ☰ Meny → AI-läge kan du dessutom slå på **smart analys på enheten** (en liten
-språkmodell, ~118 MB, laddas en gång och körs lokalt – utan nyckel och utan kostnad) eller
-lägga in en egen Anthropic-nyckel så att **Claude** läser dina texter och skriver
-journalisternas, motståndarnas och väljarnas repliker. Nyckeln stannar i din webbläsare.
+**Spelets AI** är en riktig språkmodell som körs helt på din egen dator, i webbläsaren
+(WebLLM/WebGPU, Qwen3.5 i fyra storlekar från 0,5 till 5,1 GB – laddas ned en gång och sparas).
+Ingen nyckel, ingen kostnad, inget skickas någonstans. Med den förstår spelet allt du skriver
+– ironi, berättelser, förolämpningar, vad du egentligen vill – och motståndare, journalister,
+väljare, förhandlingsmotparter och din stab svarar med egna ord och minns samtalet. Starta
+under ☰ Meny → Spelets AI (spelet föreslår rätt storlek för din dator). Utan WebGPU används
+den inbyggda analysen: en kunskapsbas med nära 2 000 svenska formuleringar som matchas mening
+för mening. Claude med egen nyckel finns kvar som dolt tillval och används aldrig annars.
+
+**Staben**: prata fritt med stabschefen, pressekreteraren, partisekreteraren och chefsekonomen
+– de känner hela läget i spelet. **Politik med egna ord**: skriv vad partiet vill, spelet
+översätter det till konkreta värden i programmet. **Den politiska kalendern**: Folk och Försvar,
+partiledardebatter, Järvaveckan, Almedalen, regeringsförklaringen, frågestund, EU-val.
 
 **Tänk på vad du säger.** Motståndare och journalister blir arga, ledsna, glada eller nervösa
 av det du skriver – i vilken grad som helst. Det syns på figuren, färgar replikerna (utbrott,
@@ -109,6 +116,10 @@ node tools/comfy-chars.mjs       # generera karaktärsark med Z-Image Turbo i Co
 python tools/slice-chars.py      # skiva arken till assets/chars/<id>/<pose>.webp + manifest.json
 python tools/mask-chars.py       # segmentera figurerna i färgbara delar (labels-<pose>.png + färger i manifestet)
 node tools/embed-kb.mjs          # förberäkna kunskapsbasens inbäddningar (kräver npm i i tools/embed)
+node tools/llm-lab.mjs <modell…> # jämför lokala språkmodeller på spelets uppgifter (WebGPU, Chromium)
+node tools/ai-test.mjs [modell]  # spela med spelets AI igång: staben, inlägg, debatt, politik med egna ord
+node tools/opinion-check.mjs 6   # hur stabil är opinionen över flera passiva fyraårsperioder?
+node tools/ideo-check.mjs        # kalibreringen mellan partiprogram och ideologier
 ```
 
 Släpp: `node tools/release.mjs minor --title "…" --scope … --notes n.md -- <filer>` →

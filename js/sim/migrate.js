@@ -9,7 +9,7 @@ import { STATS } from '../data/stats.js';
 import { programFromAxes } from './policy.js';
 
 const START_IDEOLOGY = { s: 'socialdemokrati', sd: 'nationalkonservatism', m: 'liberalkonservatism', v: 'dem_socialism', c: 'gron_liberalism', kd: 'kristdemokrati', mp: 'gron', l: 'liberalism' };
-export const CURRENT_SAVE = 4;
+export const CURRENT_SAVE = 5;
 
 export function migrate(state) {
   const rnd = makeRng((state.seed || 1) ^ 0x5a5a);

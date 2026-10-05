@@ -108,6 +108,8 @@ export function analyzeText(text, ctx = {}) {
   toneS.aggressiv += (bangs > 2 ? 1 : 0) + (capsRatio > .6 ? 2 : 0);
   if (/\d/.test(t)) toneS.saklig += 1;
   for (const w of INSULTS) if (hasWord(t, w)) emo.insult += .35;
+  // tydligt beröm/medhåll utan förolämpningar → svaga träffar på aggressiva fraser är falsklarm
+  if ((emo.praise || 0) + (emo.concede || 0) + (emo.empathy || 0) > .8 && (emo.insult || 0) < .3 && count(t, TONE_WORDS.aggressiv) === 0) { toneS.aggressiv *= .25; toneS.dryg *= .5; }
   out.intensity = clamp((capsRatio > .6 ? .5 : capsRatio > .3 ? .2 : 0) + (bangs >= 4 ? .4 : bangs >= 2 ? .2 : 0) + count(t, INTENSIFIERS) * .15, 0, 1);
   // ---- sammanvägning ----
   const issuesSorted = Object.entries(issueW).filter(([, w]) => w >= .3).sort((a, b) => b[1] - a[1]);

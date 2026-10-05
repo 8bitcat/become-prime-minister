@@ -215,6 +215,6 @@ ok(errors === 0, '30 veckor utan fel med minne, läckor och trötthet');
 ok(Number.isFinite(l.fatigue), `trötthet spåras (${l.fatigue})`);
 // migrering av gammal sparning
 const old = JSON.parse(JSON.stringify(state)); delete old.memory; delete old.secretDeals; old.v = 3;
-migrate(old); ok(old.memory && old.secretDeals && old.v === 4, 'migrering: v3 → v4 lägger till minne');
+migrate(old); ok(old.memory && old.secretDeals && old.v >= 5, 'migrering: v3 → dagens format lägger till minne');
 console.log(`\n${pass} gröna, ${fail} röda`);
 process.exit(fail ? 1 : 0);
