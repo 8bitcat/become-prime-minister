@@ -6,10 +6,10 @@ import { makeRng } from '../core/util.js';
 import { extremismOf, demoOf } from '../data/ideologies.js';
 import { defaultPolicy, POLICIES } from '../data/policies.js';
 import { STATS } from '../data/stats.js';
-import { programFromAxes } from './policy.js';
+import { programFromAxes, syncAxes, refreshExtremism } from './policy.js';
 
 const START_IDEOLOGY = { s: 'socialdemokrati', sd: 'nationalkonservatism', m: 'liberalkonservatism', v: 'dem_socialism', c: 'gron_liberalism', kd: 'kristdemokrati', mp: 'gron', l: 'liberalism' };
-export const CURRENT_SAVE = 5;
+export const CURRENT_SAVE = 6;
 
 export function migrate(state) {
   const rnd = makeRng((state.seed || 1) ^ 0x5a5a);
@@ -49,6 +49,17 @@ export function migrate(state) {
   for (const po of state.social?.posts || []) { po.comments ||= []; po.deleted ??= false; }
   for (const per of Object.values(state.people)) per.fatigue ??= 0;
   state.memory.persona.dryg ??= 0; // v5: dryghet som egen ton
+  // v6: ägandeområdena hade omvända tecken (privat räknades som vänster) – AI-partiernas ståndpunkter räknas om
+  // ur deras läge så att de betyder samma sak som förut; extremismen räknas också ur programmet
+  if (from < 6 && !state.flags.signFix) {
+    state.flags.signFix = true;
+    const FIX = ['agande_energi', 'agande_bank', 'agande_industri', 'industripolitik', 'vatten', 'internet'];
+    for (const p of Object.values(state.parties)) {
+      if (!p.program) continue;
+      if (!p.isPlayer) { const base = programFromAxes(p.pos); for (const id of FIX) p.program[id] = base[id]; syncAxes(p); }
+      else { const e = p.ext, d = p.demo; refreshExtremism(null, p); p.ext = Math.max(e || 0, p.ext); p.demo = Math.min(d || 0, p.demo); }
+    }
+  }
   state.v = CURRENT_SAVE;
   return from;
 }

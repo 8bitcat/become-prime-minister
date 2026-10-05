@@ -49,8 +49,18 @@ Sparfilen kan exporteras/importeras som JSON från menyn.
 
 - **Två vägar**: ta över S, SD, M, V, C, KD, MP eller L (fiktiva partiledare) – eller skapa ett nytt
   parti i fem steg: identitet, ideologi (51 ideologier, huvud + sekundära, med konsekvenser),
-  finjusterad politik på tolv axlar och hjärtefrågor, organisation (centralisering, ledarmakt,
-  ledarval, kandidatval, stadgar, ungdomsförbund, lokal autonomi, bredd) och målgrupper.
+  politiken (se nedan), organisation (centralisering, ledarmakt, ledarval, kandidatval, stadgar,
+  ungdomsförbund, lokal autonomi, bredd) och målgrupper.
+- **Hela skalan i partiskaparen**: kompassens nio axlar går från anarkism till totalitarism, från
+  planekonomi till anarkokapitalism, från inga gränser till stängda gränser – och de tolv
+  sakfrågorna från t.ex. inga gränser alls till storskalig återvandring. Förbi den röda markeringen
+  öppnas ytterlighetsalternativen. Alla 340 politikområden kan ställas in exakt med egen siffra
+  (t.ex. återvandring 0–500 000 per år, asylmottagande upp till 400 000), sökas och filtreras, och
+  politik kan skrivas med egna ord. Ideologin ger ett startprogram med sina kännetecken (anarkism:
+  statslöst, fascism: enpartistat …). Programmets extremism (radikal → systemfientlig) och
+  demokratisyn (inskränker rättigheter → totalitär) räknas ur programmet och styr cordon sanitaire,
+  medier, väljare och riksdagens röster; genomförd politik får realistiska följder (isolering,
+  sanktioner, kapitalflykt, utvandring, protester, fallande demokratiindex, inställda val).
 - **Partiledaren**: vanliga människor i anime-grafik – kroppstyp, 19 frisyrer, 27 plagg med egna
   färger, ansiktsdetaljer, stil, röst, kroppsspråk, 40 yrken med trovärdighet i sakfrågor, politisk
   erfarenhet, familj, livsåskådning, personlighetsdrag och offentlig image (äkthet). Tio egenskaper
@@ -67,7 +77,7 @@ Sparfilen kan exporteras/importeras som JSON från menyn.
   partikamrater och journalister off record (som kan läcka), fokusgrupper, ett politiskt minne av
   allt du sagt (motsägelser, framgrävda uttalanden), faktakoll, programförklaring och egen ideologi
   i egna ord, ministrar som protesterar eller avgår, ledamöter som bryter partilinjen, trötthet.
-- **Politiken som verktygssystem**: 328 områden i 26 domäner med gällande lag, partiprogram,
+- **Politiken som verktygssystem**: 340 områden i 26 domäner (39 ytterlighetsalternativ) med gällande lag, partiprogram,
   effekter, kostnad och genomförandetid – från skatter, försvar och migration till barn & familj,
   folkhälsa, kultur & medier, digitalisering, transporter, jordbruk & skog, natur, bank & konsument,
   näringsliv, kommuner, krisberedskap och pensioner. 36 nya mätserier under Sverige (alkohol, fetma,

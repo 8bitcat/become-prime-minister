@@ -11,6 +11,7 @@
   --gold: #f2c14e;
   --gold2: #c99a2e;
   --red: #e5484d;
+  --xred: rgba(229,72,77,.55);
   --green: #3ecf8e;
   --blue: #4f8ff7;
   --orange: #f59e42;
@@ -400,3 +401,18 @@ kbd { background: var(--bg2); border: 1px solid var(--line); border-radius: 4px;
 .chatlog .msg.typing div { color: var(--muted); font-style: italic; }
 .chatin { display: flex; gap: 8px; margin-top: 8px; align-items: flex-end; }
 .chatin textarea { flex: 1; resize: vertical; font-size: 15px; }
+
+/* v0.7 ytterligheter: röda zoner, varningar, sammanfattning i partiskaparen */
+.xin { display: flex; flex-direction: column; gap: 2px; }
+.zbar { height: 4px; border-radius: 3px; background: var(--line); margin: 0 7px; }
+.axis.xaxis .l small.xl, .axis.xaxis .r small.xl { display: block; color: #ff7a7f; font-size: 11px; margin-top: 2px; }
+.xbanner { margin-top: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); }
+.xbanner.gold { border-color: rgba(242,193,78,.5); } .xbanner.orange { border-color: var(--orange); background: rgba(245,158,66,.08); } .xbanner.red { border-color: var(--red); background: rgba(229,72,77,.1); }
+.xbanner.red b { color: #ff7a7f; } .xbanner.orange b { color: var(--orange); }
+.item.xitem { border-color: rgba(229,72,77,.6); background: rgba(229,72,77,.06); }
+.xwarn { color: #ff7a7f; font-size: 12px; font-weight: 600; margin-top: 4px; } .xwarn:empty { display: none; }
+.pnum { width: 110px; padding: 4px 8px; }
+.pctl { margin-top: 8px; } .pctl select { width: 100%; }
+.polsum { margin-bottom: 12px; }
+@media (max-width: 760px) { .axis.xaxis { grid-template-columns: 1fr; } .axis.xaxis .l, .axis.xaxis .r { text-align: left; } }
+.axis .name span.danger { color: #ff7a7f; }

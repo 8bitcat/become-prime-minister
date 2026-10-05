@@ -4,6 +4,7 @@ import { activeParties } from './opinion.js';
 import { clamp, pick, weighted } from '../core/util.js';
 import { willingness } from './government.js';
 import { reformStance, billLike, applyReform, syncLawFromStats } from './policy.js';
+import { POLICY_BY_ID, valueMarks } from '../data/policies.js';
 
 // Förslagspoolen. vec = vilken riktning förslaget drar på varje axel (-1…1), eff = effekt på Sverige.
 const B = (id, title, area, vec, desc, eff, cost = 0) => ({ id, title, area, vec, desc, eff, cost });
@@ -83,6 +84,14 @@ export function aiVote(state, party, bill, proposerId) {
   if (bill.deals?.[party.id]) score += 1; // förhandlad överenskommelse
   if (party.cordon?.includes(proposerId) && st < .4) score -= .3;
   const rel = party.relations?.[proposerId] || 0; score += rel / 400;
+  // ytterlighetsreformer: demokratiska partier röstar nej till att montera ned demokratin, ja till att återställa den
+  if (bill.kind === 'reform' && POLICY_BY_ID[bill.policyId]) {
+    const pol = POLICY_BY_ID[bill.policyId]; const mt = valueMarks(pol, bill.to), mf = valueMarks(pol, bill.from);
+    const ownExt = party.ext || 0, ownDemo = party.demo || 0;
+    if (mt.demo <= -2 && ownDemo > -2) score -= 2.5; else if (mt.demo < 0 && ownDemo >= 0) score -= .8;
+    if (mt.ext >= 2 && ownExt < 2) score -= 1.2; else if (mt.ext === 1 && ownExt === 0) score -= .25;
+    if ((mf.ext > mt.ext || mf.demo < mt.demo) && ownExt < 2 && ownDemo > -2) score += .6;
+  }
   return score > .12 ? 'ja' : score < -.12 ? 'nej' : 'avstår';
 }
 

@@ -16,7 +16,7 @@ import { SAVE_VERSION } from '../core/state.js';
 import { defaultStructure, initFactions } from './party.js';
 import { initJournalists, initInfluencers } from './media.js';
 import { defaultPolicy } from '../data/policies.js';
-import { programFromAxes, syncAxes, coalitionAgreement } from './policy.js';
+import { programFromAxes, syncAxes, coalitionAgreement, programExtremism } from './policy.js';
 import { recordStatement } from '../ai/memory.js';
 
 const START_DATE = { y: 2027, m: 1, d: 4 }; // måndag
@@ -74,10 +74,15 @@ export function newGame({ seed = Date.now() % 2147483647, mode, takeoverId, part
     };
     for (let i = 0; i < 3; i++) { const p = makePerson(rnd, { partyId: 'ny', role: 'mp' }); people[p.id] = p; playerParty.people.push(p.id); }
     parties.ny = playerParty;
-    for (const q of Object.values(parties)) if (q !== playerParty) { q.relations.ny = playerParty.ext >= 3 ? -60 : playerParty.ext === 2 ? -25 : -5; playerParty.relations[q.id] = 0; }
+    // programmet från partiskaparen (politikområde för politikområde, även ytterligheter) – annars ur ideologin
+    playerParty.program = { ...programFromAxes(playerParty.pos), ...(partyDef.program || {}) };
+    syncAxes(playerParty);
+    const pe = programExtremism(playerParty.program);
+    playerParty.ext = Math.max(playerParty.ext, pe.ext); playerParty.demo = Math.min(playerParty.demo, pe.demo);
+    for (const q of Object.values(parties)) if (q !== playerParty) { q.relations.ny = playerParty.ext >= 3 || playerParty.demo <= -2 ? -60 : playerParty.ext === 2 ? -25 : -5; playerParty.relations[q.id] = 0; }
     const lr = (playerParty.pos.ekonomi + playerParty.pos.valfard) / 2;
     playerParty.bloc = lr < -20 ? 'left' : lr > 20 ? 'right' : 'center';
-    if (playerParty.ext >= 2) for (const q of Object.values(parties)) if (q !== playerParty) q.cordon.push('ny');
+    if (playerParty.ext >= 2 || playerParty.demo <= -2) for (const q of Object.values(parties)) if (q !== playerParty) q.cordon.push('ny');
   }
   // spelarens ledare
   const persona = leaderDef.persona || randomPersona(rnd, { age: leaderDef.age, gender: leaderDef.gender, role: 'leader' });
@@ -98,7 +103,7 @@ export function newGame({ seed = Date.now() % 2147483647, mode, takeoverId, part
     news: [], social: null, events: { log: [], done: [] }, scandals: [], world: initWorld(rnd),
     journalists: initJournalists(rnd), influencers: initInfluencers(rnd),
     history: { leaders: [], timeline: [{ date: { ...START_DATE }, week: 0, kind: 'start', text: mode === 'new' ? `${playerParty.name} bildas av ${leader.name}.` : `${leader.name} tar över som partiledare för ${playerParty.name}.` }], bios: [] },
-    ap: 4, apMax: 4, queue: [], log: [], flags: {}, stats: { weeks: 0, debates: 0, debatesWon: 0, billsPassed: 0, posts: 0 },
+    ap: 4, apMax: 4, queue: [], log: [], flags: { signFix: true }, stats: { weeks: 0, debates: 0, debatesWon: 0, billsPassed: 0, posts: 0 },
     policy: defaultPolicy(), reforms: [],
     memory: { statements: [], persona: { saklig: 0, kampande: 0, aggressiv: 0, humor: 0, kansla: 0, undvikande: 0, n: 0 }, promises: [], corrections: 0 }, secretDeals: [],
   };
@@ -106,7 +111,7 @@ export function newGame({ seed = Date.now() % 2147483647, mode, takeoverId, part
   if (partyDef?.logoImage) playerParty.logoImage = partyDef.logoImage;
   if (leaderDef.sprite) leader.sprite = leaderDef.sprite;
   if (leaderDef.spriteLook) leader.spriteLook = { ...leaderDef.spriteLook };
-  for (const p of Object.values(parties)) { p.program = programFromAxes(p.pos); if (!p.isPlayer || mode === 'takeover') syncAxes(p); else { /* nytt parti: programmet härleds ur den valda ideologin */ syncAxes(p); } }
+  for (const p of Object.values(parties)) { if (!(p.isPlayer && mode === 'new')) { p.program = programFromAxes(p.pos); syncAxes(p); } }
   for (const p of Object.values(parties)) { state.opinion.awareness[p.id] = p.inRiksdag ? 1 : 0.004; state.history.leaders.push({ personId: p.leader, partyId: p.id, name: people[p.leader].name, from: people[p.leader].since || { ...START_DATE }, to: null, reason: null }); }
   for (const j of Object.values(state.journalists)) { people[j.person.id] = j.person; delete j.person; j.personId = Object.keys(people).find((id) => people[id].name === j.name); }
   const targets = {}; for (const p of Object.values(parties)) if (p.inRiksdag) targets[p.id] = (p.seats / RIKSDAG_SEATS) * 100 * (0.97 + rnd() * 0.06);

@@ -26,7 +26,7 @@ import { PROFESSION_BY_ID, EXPERIENCE_BY_ID, PUBLIC_IMAGE } from '../data/person
 import { authenticity } from '../sim/opinion.js';
 import { TOTAL_KOMMUNER } from '../sim/election.js';
 import { itemBill } from '../sim/riksdag.js';
-import { ideologyDescription, effectiveLaw } from '../sim/policy.js';
+import { ideologyDescription, effectiveLaw, compassExt } from '../sim/policy.js';
 import { POLICY_BY_ID, policyLabel } from '../data/policies.js';
 import { compassSVG } from './politik.js';
 import { outletInfo } from '../sim/news.js';
@@ -127,7 +127,7 @@ export function pageParty(s, ui) {
   lc.querySelector('#avga').addEventListener('click', () => ui.action(ACTIONS.find((a) => a.id === 'avga')));
   idc.querySelector('#logoBtn').addEventListener('click', () => ui.changeLogo());
   const idd = ideologyDescription(p.program || {});
-  const pos = card(`<span>Politiken</span><button class="btn sm" id="chg">Ändra program</button>`, `<p style="margin:0 0 6px"><b>${esc(idd.label)}</b><br><small class="muted">${idd.tags.map(esc).join(' · ') || 'nära mitten'}</small></p>${compassSVG(idd.compass, 380)}<table>${ISSUES.map((is) => `<tr><td>${esc(is.name)}</td><td class="num" style="width:70px"><span class="${p.pos[is.id] < 0 ? 'down' : 'up'}" style="font-variant-numeric:tabular-nums">${p.pos[is.id] > 0 ? '+' : ''}${p.pos[is.id]}</span></td><td><small class="muted">${esc(issueLabel(is.id, p.pos[is.id]))}${p.profile?.[is.id] > 1.1 ? ' · <span class="tag gold">hjärtefråga</span>' : ''}</small></td></tr>`).join('')}</table>`);
+  const pos = card(`<span>Politiken</span><button class="btn sm" id="chg">Ändra program</button>`, `<p style="margin:0 0 6px"><b>${esc(idd.label)}</b><br><small class="muted">${idd.tags.map(esc).join(' · ') || 'nära mitten'}</small></p>${compassSVG(compassExt(p.program || {}), 380)}<table>${ISSUES.map((is) => `<tr><td>${esc(is.name)}</td><td class="num" style="width:70px"><span class="${p.pos[is.id] < 0 ? 'down' : 'up'}" style="font-variant-numeric:tabular-nums">${p.pos[is.id] > 0 ? '+' : ''}${p.pos[is.id]}</span></td><td><small class="muted">${esc(issueLabel(is.id, p.pos[is.id]))}${p.profile?.[is.id] > 1.1 ? ' · <span class="tag gold">hjärtefråga</span>' : ''}</small></td></tr>`).join('')}</table>`);
   pos.querySelector('#chg').addEventListener('click', () => ui.go('politik'));
   g.append(idc, lc, pos);
   const people = card('Partiets profiler', (p.people || []).map((id) => s.people[id]).filter((x) => x && x.alive).map((m) => `<div class="minister"><div class="av">${characterSVG(m, { crop: 'face', id: 'm' + m.id })}</div><div><b>${esc(m.name)}</b> ${m.ministry ? `<span class="tag gold">${esc(MINISTRIES.find((x) => x.id === m.ministry)?.name || 'minister')}</span>` : ''}<br><small class="muted">${esc(personSummary(m))} · integritet ${m.traits.integritet} · ledarskap ${m.traits.ledarskap}</small></div></div>`).join('') || '<div class="empty">Inga</div>');

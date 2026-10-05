@@ -8,7 +8,7 @@ import { localReady, localJSON } from './local.js';
 import { policyMessages } from './prompts.js';
 
 // Vardagsord → ord som står i politikområdenas namn (så att "bensinskatten" hittar "Drivmedelsskatt")
-const SYN = [[/bensin|diesel|soppa|drivmedel|pumppris/, 'drivmedel'], [/pensionär|pension|äldre|ålderdom/, 'pension äldre'], [/invandr|flykting|asyl|nyanländ|migrant/, 'asyl migration invandring'], [/polis|snut|ordningsmakt/, 'polis'], [/gäng|skjut|spräng|kriminell/, 'gäng straff polis'], [/lärare|elev|klassrum|skola|skolor/, 'skola'], [/friskol|skolkoncern|vinst/, 'vinst skola friskol'], [/tunnelbana|buss|pendeltåg|spårvagn|kollektiv|sl-kort|månadskort/, 'kollektivtrafik'], [/tåg|järnväg|höghastighet/, 'järnväg tåg'], [/sjukhus|akut|vård|sjuksköterska|läkare|vårdkö/, 'vård sjukvård'], [/hyra|hyror|hyresrätt|lägenhet|bostad/, 'hyra bostad bygg'], [/kärnkraft|reaktor/, 'kärnkraft'], [/vindkraft|vindkraftverk/, 'vindkraft'], [/el-pris|elpris|elräkning|elnät/, 'el energi'], [/försvar|militär|soldat|värnplikt|nato/, 'försvar värnplikt'], [/klimat|utsläpp|koldioxid/, 'klimat koldioxid utsläpp'], [/bidrag|socialbidrag|försörjningsstöd/, 'bidrag'], [/a-kassa|arbetslös/, 'a-kassa arbetslöshet'], [/las\b|anställningsskydd|turordning/, 'anställningsskydd las'], [/barnbidrag|föräldrapenning|föräldraledig|förskola|barnomsorg/, 'barn föräldra förskola'], [/eu\b|europeiska unionen|bryssel/, 'eu'], [/bistånd/, 'bistånd'], [/kultur|teater|museum|bibliotek|public service|svt|sveriges radio/, 'kultur public service'], [/alkohol|systembolag|sprit|öl\b|vin\b/, 'alkohol'], [/spel|casino|kasino|spelbolag/, 'spel'], [/narkotika|cannabis|knark/, 'narkotika'], [/kommunalskatt/, 'kommunalskatt'], [/statlig skatt|värnskatt|höginkomst|de rika|rikaste/, 'statlig inkomstskatt brytpunkt'], [/bolagsskatt|företagsskatt/, 'bolagsskatt'], [/moms/, 'moms'], [/ränteavdrag|bolån/, 'ränteavdrag'], [/arvsskatt|arv\b/, 'arvsskatt'], [/fastighetsskatt|fastighetsavgift|villa/, 'fastighet'], [/rut|rot\b|hushållsnära/, 'rut rot']];
+const SYN = [[/bensin|diesel|soppa|drivmedel|pumppris/, 'drivmedel'], [/pensionär|pension|äldre|ålderdom/, 'pension äldre'], [/invandr|flykting|asyl|nyanländ|migrant/, 'asyl migration invandring'], [/asylsök|ta emot .*(flykting|asyl)|flyktingar per år|kvotflykting/, 'asylmottagande'], [/polis|snut|ordningsmakt/, 'polis'], [/gäng|skjut|spräng|kriminell/, 'gäng straff polis'], [/lärare|elev|klassrum|skola|skolor/, 'skola'], [/friskol|skolkoncern|vinst/, 'vinst skola friskol'], [/tunnelbana|buss|pendeltåg|spårvagn|kollektiv|sl-kort|månadskort/, 'kollektivtrafik'], [/tåg|järnväg|höghastighet/, 'järnväg tåg'], [/sjukhus|akut|vård|sjuksköterska|läkare|vårdkö/, 'vård sjukvård'], [/hyra|hyror|hyresrätt|lägenhet|bostad/, 'hyra bostad bygg'], [/kärnkraft|reaktor/, 'kärnkraft'], [/vindkraft|vindkraftverk/, 'vindkraft'], [/el-pris|elpris|elräkning|elnät/, 'el energi'], [/försvar|militär|soldat|värnplikt|nato/, 'försvar värnplikt'], [/klimat|utsläpp|koldioxid/, 'klimat koldioxid utsläpp'], [/bidrag|socialbidrag|försörjningsstöd/, 'bidrag'], [/a-kassa|arbetslös/, 'a-kassa arbetslöshet'], [/las\b|anställningsskydd|turordning/, 'anställningsskydd las'], [/barnbidrag|föräldrapenning|föräldraledig|förskola|barnomsorg/, 'barn föräldra förskola'], [/eu\b|europeiska unionen|bryssel/, 'eu'], [/bistånd/, 'bistånd'], [/kultur|teater|museum|bibliotek|public service|svt|sveriges radio/, 'kultur public service'], [/alkohol|systembolag|sprit|öl\b|vin\b/, 'alkohol'], [/spel|casino|kasino|spelbolag/, 'spel'], [/narkotika|cannabis|knark/, 'narkotika'], [/kommunalskatt/, 'kommunalskatt'], [/statlig skatt|värnskatt|höginkomst|de rika|rikaste/, 'statlig inkomstskatt brytpunkt'], [/bolagsskatt|företagsskatt/, 'bolagsskatt'], [/moms/, 'moms'], [/ränteavdrag|bolån/, 'ränteavdrag'], [/arvsskatt|arv\b/, 'arvsskatt'], [/fastighetsskatt|fastighetsavgift|villa/, 'fastighet'], [/rut|rot\b|hushållsnära/, 'rut rot'], [/återvandr|deporter|utvis|skicka hem|repatri/, 'återvandring'], [/anarki|statslös|ingen stat/, 'styrelseform statsskick'], [/diktatur|enpartistat|junta|auktoritärt styre|envälde|presidentstyre|direktdemokrati|folkomröstning/, 'styrelseform statsskick'], [/valen|allmänna val|skjuta upp valet|rösträtt/, 'allmänna val rösträtt'], [/oppositionen|opposition|partiförbud|förbjuda partier/, 'oppositionspartier'], [/gränsmur|mur\b|gränsen|gränser/, 'gränskontroll'], [/invandringsstopp|stoppa invandring|stoppa all invandring/, 'invandringsstopp'], [/planekonomi|förstatliga|nationalisera|expropri/, 'ägande industri privat egendom'], [/censur|propaganda|statliga medier/, 'yttrandefrihet press'], [/teokrati|religiös lag|sharia|statsateism|förbjuda religion/, 'religion'], [/strejk/, 'strejkrätt'], [/arbetsplikt|tvångsarbete/, 'arbetsplikt'], [/nerväxt|tillväxt/, 'tillväxtpolitik'], [/privatbil|bilförbud|förbjuda bilar/, 'privatbilism'], [/hemlig polis|säkerhetspolis|politiska fångar/, 'polis'], [/arbetsläger|avskaffa fängelser|fängelserna/, 'fängelse'], [/kreditsystem|massövervakning|övervakning/, 'övervakning'], [/centralbank|riksbank/, 'centralbank'], [/inkomstskatt|platt skatt|marginalskatt/, 'skattesystem inkomstskatt']];
 const STOP = new Set('och eller att det den detta dessa som för från till med utan inte ska skall vill kan måste alla allt mer mindre fler färre över under efter före vara blir varje andra annan också bara även ännu inom mot genom sverige svenska staten statens'.split(' '));
 const words = (t) => String(t || '').toLowerCase().replace(/[^a-zåäöé0-9\- ]+/g, ' ').split(/\s+/).filter((w) => w.length >= 4 && !STOP.has(w));
 const stem = (w) => w.slice(0, 5);
@@ -45,11 +45,32 @@ export function policyCandidates(text, max = 14) {
 const snap = (p, v) => { v = Math.max(p.min, Math.min(p.max, v)); const r = Math.round(v / p.step) * p.step; return Number.isInteger(p.step) ? Math.round(r) : Math.round(r * 100) / 100; };
 const UP = /(höj|öka|mer |fler|utök|bygg|satsa|stärk|fördubbl|dubbl|större|höga|högre|\bny\b|\bnya\b|\bnytt\b)/; const DOWN = /(sänk|minsk|färre|mindre|skär|halver|avveckl|lägre|stryp|ta bort|dra ned|dra ner)/;
 const numIn = (s) => { const m = wordsToDigits(s.toLowerCase()).replace(/(\d)\s(?=\d{3}\b)/g, '$1').match(/(\d+(?:[.,]\d+)?)/); return m ? parseFloat(m[1].replace(',', '.')) : null; };
+// Nyckelord i meningen → nyckelord i alternativets namn; tredje ledet = motsatsord som diskvalificerar
+const KW = [
+  [/förstatlig|nationalis|socialiser|expropri/, /förstatlig|nationalis|expropri|socialis|planekonomi/, /privat/],
+  [/förbjud|förbud|stoppa|olagligt/, /förbud|stopp|förbjud|olaglig/, /tillåt|fri\b|fritt/],
+  [/avskaffa|ta bort|slopa|skrota/, /avskaff|ingen|inget|slopa|nej\b|avveckl/, /inför|utök/],
+  [/gränsmur|\bmur\b|stängsel/, /mur\b|stängsel|militär gräns/, /fri\b|öppn/],
+  [/\binför|ja till/, /\bja\b|\binför|obligator/, /avskaff|ingen\b/],
+  [/tillåt|legalis|fri |fritt|släpp|öppna/, /fri|tillåt|legal|öppn/, /förbud|förbjud|stäng/],
+  [/privat|avreglera|marknad/, /privat|marknad|avreglera/, /statlig|förstatlig|nationalis/],
+  [/statlig|offentlig/, /statlig|offentlig|förstatlig/, /privat/],
+  [/stäng/, /stäng|stopp/, /öppn|fri/], [/hård|skärp|strän/, /hård|skärp|strän/, /mild/], [/mild|förebygg|lokal/, /förebygg|lokal|mild/, /hård/],
+];
 function choiceFromText(p, s, minDice = .18) {
-  const t = s.toLowerCase();
-  const kw = [[/förbjud|förbud|stoppa|olagligt/, /förbud|stopp|förbjud|olaglig/], [/avskaffa|ta bort|slopa/, /avskaff|ingen|inget|slopa|nej\b/], [/inför|införa|ja till/, /ja\b|inför|obligator/], [/tillåt|legalis|fri |fritt|släpp/, /fri|tillåt|legal/], [/privat/, /privat|marknad/], [/statlig|förstatlig|offentlig/, /statlig|offentlig|förstatlig/], [/stäng/, /stäng/], [/hård|skärp|strän/, /hård|skärp|strän/], [/mild|förebygg|lokal/, /förebygg|lokal|mild/]];
-  for (const [re, opt] of kw) if (re.test(t)) { const o = p.options.find((x) => opt.test(x.name.toLowerCase())); if (o) return o.id; }
-  const g = trigrams(t); let best = null, bs = minDice;
+  const t = s.toLowerCase(); const g = trigrams(t);
+  for (const [re, opt, anti] of KW) if (re.test(t)) {
+    // alla alternativ som matchar – bäst är det där nyckelordet kommer tidigt och som liknar meningen mest
+    const c = p.options.map((o) => { const nm = o.name.toLowerCase(); const m = nm.search(opt); return { o, sc: m < 0 ? -9 : dice(g, trigrams(nm)) + .4 * (1 - m / Math.max(1, nm.length)) - (anti.test(nm) ? .6 : 0) }; }).filter((x) => x.sc > -1).sort((a, b) => b.sc - a.sc);
+    if (c.length && c[0].sc > 0) return c[0].o.id;
+  }
+  // ord som bara finns i ett av alternativen ("teokrati", "enpartistat", "junta") avgör
+  const st = (w) => w.slice(0, 6); const sw = new Set(t.replace(/[^a-zåäöé ]+/g, ' ').split(/\s+/).filter((w) => w.length >= 5).map(st));
+  const ow = p.options.map((o) => new Set(o.name.toLowerCase().replace(/[^a-zåäöé ]+/g, ' ').split(/\s+/).filter((w) => w.length >= 5).map(st)));
+  let bo = null, bn = 0;
+  p.options.forEach((o, i) => { let n = 0; for (const w of ow[i]) if (sw.has(w) && ow.filter((x) => x.has(w)).length === 1) n++; if (n > bn) { bn = n; bo = o.id; } });
+  if (bo) return bo;
+  let best = null, bs = minDice;
   for (const o of p.options) { const d = dice(g, trigrams(o.name)); if (d > bs) { bs = d; best = o.id; } }
   return best;
 }
@@ -57,7 +78,7 @@ function choiceFromText(p, s, minDice = .18) {
 export function heuristicPolicyMap(text, program = {}) {
   const out = new Map();
   // dela också på "och" så att "bygg ut tunnelbanan och förbjud vinster i skolan" blir två ställningstaganden
-  const parts = splitSentences(text).flatMap((s) => s.split(/,\s+(?=[a-zåäö]+\s)|\s+och\s+(?=(?:inför|förbjud|sänk|höj|bygg|avskaffa|ta bort|öka|minska|satsa|stoppa|tillåt|legalisera|stäng|skrota|rusta|anställ|ge|ny|nya|fler|mer|mindre|färre)[a-zåäö]*\b)/i)).filter((x) => x.trim().length > 3);
+  const parts = splitSentences(text).flatMap((s) => s.split(/,\s+(?=[a-zåäö]+\s)|\s+och\s+(?=(?:inför|förbjud|sänk|höj|bygg|avskaffa|ta bort|öka|minska|satsa|stoppa|tillåt|legalisera|stäng|skrota|rusta|anställ|ge|ny|nya|fler|mer|mindre|färre|förstatlig|nationalis|privatiser|exproprier|återinför|skjut|lägg ned|lägg ner)[a-zåäö]*\b)/i)).filter((x) => x.trim().length > 3);
   for (const s of parts) {
     const c = policyCandidates(s, 3).filter((x) => x.sim >= .3);
     for (const { p } of c.slice(0, 3)) {
@@ -67,11 +88,12 @@ export function heuristicPolicyMap(text, program = {}) {
       if (p.type === 'choice') to = choiceFromText(p, s, .32);
       else {
         const n = numIn(s);
-        if (n != null && n >= p.min && n <= p.max) to = snap(p, n);
+        const nn = n != null && p.unit === 'tusen' && n > p.max && n >= 1000 ? n / 1000 : n;
+        if (nn != null && nn >= p.min && nn <= p.max) to = snap(p, nn);
         else if (UP.test(t)) to = snap(p, cur + (p.max - p.min) * .15);
         else if (DOWN.test(t)) to = snap(p, cur - (p.max - p.min) * .15);
       }
-      if (to != null && to !== cur) { out.set(p.id, { id: p.id, from: cur, to, why: s }); break; }
+      if (to != null) { if (to !== cur) out.set(p.id, { id: p.id, from: cur, to, why: s }); break; } // redan så i programmet = träff, gå inte vidare till sämre kandidater
     }
   }
   return [...out.values()];
@@ -79,7 +101,7 @@ export function heuristicPolicyMap(text, program = {}) {
 function parseValue(p, varde, cur) {
   const v = String(varde || '').toLowerCase();
   if (p.type === 'choice') { const exact = p.options.find((o) => o.id === v || o.name.toLowerCase() === v); if (exact) return exact.id; return choiceFromText(p, v); }
-  const n = numIn(v);
+  const n0 = numIn(v); const n = n0 != null && p.unit === 'tusen' && n0 > p.max && n0 >= 1000 ? n0 / 1000 : n0;
   if (n != null) return snap(p, n);
   if (UP.test(v)) return snap(p, cur + (p.max - p.min) * .15);
   if (DOWN.test(v)) return snap(p, cur - (p.max - p.min) * .15);

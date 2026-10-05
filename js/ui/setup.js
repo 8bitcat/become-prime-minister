@@ -1,7 +1,7 @@
 // Skapa spelomgång: vägval → partiet (identitet, ideologi, organisation, målgrupper) → ledaren → starta.
 import { h, esc, makeRng, clamp } from '../core/util.js';
 import { START_PARTIES, LOGO_SHAPES, PARTY_COLORS } from '../data/parties.js';
-import { ISSUES, issueLabel } from '../data/issues.js';
+import { ISSUES } from '../data/issues.js';
 import { IDEOLOGIES, IDEOLOGY_BY_ID, FAMILIES, combinePositions, extremismOf, demoOf, ideologyLabel } from '../data/ideologies.js';
 import { SEGMENTS } from '../data/segments.js';
 import { logoSVG, imageToLogo } from '../art/logo.js';
@@ -13,6 +13,8 @@ import { modal } from './modal.js';
 import { renderLeaderCreator, blankLeader, finalizeLeader } from './leader-creator.js';
 import { TRAITS } from '../sim/people.js';
 import { defaultStructure, STRUCTURE_OPTIONS, structureSummary } from '../sim/party.js';
+import { ideologyProgram, axesFromProgram, programExtremism, EXT_NAMES, DEMO_NAMES } from '../sim/policy.js';
+import { partyPoliticsStep } from './partypolitics.js';
 
 export function renderSetup({ onDone, onCancel }) {
   const app = document.getElementById('app');
@@ -23,7 +25,10 @@ export function renderSetup({ onDone, onCancel }) {
     leader: blankLeader(rnd, 'k'),
     slot: null,
   };
-  let step = 0, partyTab = 'identitet';
+  draft.party.program = ideologyProgram('centrism'); draft.party.pos = axesFromProgram(draft.party.program);
+  let step = 0, partyTab = 'identitet', polTab = 'kompass';
+  // ideologin ger ett startprogram (med ideologins kännetecken); därefter räknas axlarna ur programmet
+  const regenProgram = (P) => { P.program = ideologyProgram(P.ideology.primary, P.ideology.secondary); P.pos = axesFromProgram(P.program); P.tuned = false; };
   const steps = () => draft.mode === 'new' ? ['Vägval', 'Partiet', 'Ledaren', 'Starta'] : ['Vägval', 'Ledaren', 'Starta'];
   let leaderCreator = null;
 
@@ -121,31 +126,16 @@ export function renderSetup({ onDone, onCancel }) {
     let fam = IDEOLOGY_BY_ID[P.ideology.primary]?.family || 'vanster';
     const famEl = left.querySelector('#fam'), ideo = left.querySelector('#ideo'), sec = right.querySelector('#sec'), sum = right.querySelector('#summary');
     const drawFam = () => { famEl.innerHTML = ''; for (const [id, nm] of Object.entries(FAMILIES)) famEl.append(h('button', { class: id === fam ? 'on' : '', onclick: () => { fam = id; drawIdeo(); drawFam(); } }, nm)); };
-    const drawIdeo = () => { ideo.innerHTML = ''; for (const I of IDEOLOGIES.filter((x) => x.family === fam)) { const o = h('div', { class: 'opt ' + (P.ideology.primary === I.id ? 'on' : '') }); o.innerHTML = `<b>${esc(I.name)}</b>${I.ext ? ` <span class="tag ${I.ext >= 3 ? 'red' : I.ext === 2 ? 'gold' : ''}">${I.ext >= 3 ? 'systemfientlig' : I.ext === 2 ? 'radikal' : 'utmanande'}</span>` : ''}<small>${esc(I.desc)}</small>`; o.addEventListener('click', () => { P.ideology.primary = I.id; P.ideology.secondary = P.ideology.secondary.filter((s) => s !== I.id); P.pos = combinePositions(P.ideology.primary, P.ideology.secondary); P.tuned = false; drawIdeo(); drawSec(); drawSum(); }); ideo.append(o); } };
-    const drawSec = () => { sec.innerHTML = ''; for (const I of IDEOLOGIES) { if (I.id === P.ideology.primary) continue; const on = P.ideology.secondary.includes(I.id); const c = h('span', { class: 'chip ' + (on ? 'on' : ''), title: I.desc, onclick: () => { if (on) P.ideology.secondary = P.ideology.secondary.filter((s) => s !== I.id); else if (P.ideology.secondary.length < 2) P.ideology.secondary.push(I.id); else return; P.pos = combinePositions(P.ideology.primary, P.ideology.secondary); P.tuned = false; drawSec(); drawSum(); } }, I.name); sec.append(c); } };
-    const drawSum = () => { const ext = extremismOf(P.ideology.primary, P.ideology.secondary), demo = demoOf(P.ideology.primary, P.ideology.secondary); const I = IDEOLOGY_BY_ID[P.ideology.primary]; const likes = [...new Set([I, ...P.ideology.secondary.map((id) => IDEOLOGY_BY_ID[id])].flatMap((x) => x.tags))].map((id) => SEGMENTS.find((s) => s.id === id)?.name).filter(Boolean); sum.innerHTML = `<b>${esc(ideologyLabel(P.ideology.primary, P.ideology.secondary))}</b><br><small class="muted">Naturlig dragningskraft: ${likes.join(', ') || 'bred'}</small><br><small>Extremism: ${['etablerad', 'utmanande', 'radikal', 'systemfientlig'][ext]} · Demokratisyn: ${demo < -1 ? '<span class="danger">antidemokratisk – alla partier vägrar samarbete, medierna granskar hårt</span>' : demo < 0 ? '<span style="color:var(--orange)">skeptisk till institutionerna – svårare samarbeten</span>' : 'demokratisk'}</small><div style="margin-top:8px">${ISSUES.map((is) => `<span class="tag" title="${esc(is.name)}">${esc(is.short)} ${P.pos[is.id] > 0 ? '+' : ''}${P.pos[is.id]}</span>`).join(' ')}</div>`; };
+    const drawIdeo = () => { ideo.innerHTML = ''; for (const I of IDEOLOGIES.filter((x) => x.family === fam)) { const o = h('div', { class: 'opt ' + (P.ideology.primary === I.id ? 'on' : '') }); o.innerHTML = `<b>${esc(I.name)}</b>${I.ext ? ` <span class="tag ${I.ext >= 3 ? 'red' : I.ext === 2 ? 'gold' : ''}">${I.ext >= 3 ? 'systemfientlig' : I.ext === 2 ? 'radikal' : 'utmanande'}</span>` : ''}<small>${esc(I.desc)}</small>`; o.addEventListener('click', () => { P.ideology.primary = I.id; P.ideology.secondary = P.ideology.secondary.filter((s) => s !== I.id); regenProgram(P); drawIdeo(); drawSec(); drawSum(); }); ideo.append(o); } };
+    const drawSec = () => { sec.innerHTML = ''; for (const I of IDEOLOGIES) { if (I.id === P.ideology.primary) continue; const on = P.ideology.secondary.includes(I.id); const c = h('span', { class: 'chip ' + (on ? 'on' : ''), title: I.desc, onclick: () => { if (on) P.ideology.secondary = P.ideology.secondary.filter((s) => s !== I.id); else if (P.ideology.secondary.length < 2) P.ideology.secondary.push(I.id); else return; regenProgram(P); drawSec(); drawSum(); } }, I.name); sec.append(c); } };
+    const drawSum = () => { const ext = extremismOf(P.ideology.primary, P.ideology.secondary), demo = demoOf(P.ideology.primary, P.ideology.secondary); const I = IDEOLOGY_BY_ID[P.ideology.primary]; const likes = [...new Set([I, ...P.ideology.secondary.map((id) => IDEOLOGY_BY_ID[id])].flatMap((x) => x.tags))].map((id) => SEGMENTS.find((s) => s.id === id)?.name).filter(Boolean); sum.innerHTML = `<b>${esc(ideologyLabel(P.ideology.primary, P.ideology.secondary))}</b><br><small class="muted">Naturlig dragningskraft: ${likes.join(', ') || 'bred'}</small><br><small>Extremism: ${['etablerad', 'utmanande', 'radikal', 'systemfientlig'][ext]}${(() => { const pe = programExtremism(P.program); return pe.items.length ? ` · programmet: <span class="danger">${esc(EXT_NAMES[pe.ext])}${pe.demo < 0 ? ' – ' + esc(DEMO_NAMES[pe.demo]) : ''}</span>` : ''; })()} · Demokratisyn: ${demo < -1 ? '<span class="danger">antidemokratisk – alla partier vägrar samarbete, medierna granskar hårt</span>' : demo < 0 ? '<span style="color:var(--orange)">skeptisk till institutionerna – svårare samarbeten</span>' : 'demokratisk'}</small>${P.tuned ? '<br><small class="muted">Obs: att byta ideologi bygger om programmet från grunden.</small>' : ''}<div style="margin-top:8px">${ISSUES.map((is) => `<span class="tag" title="${esc(is.name)}">${esc(is.short)} ${P.pos[is.id] > 0 ? '+' : ''}${P.pos[is.id]}</span>`).join(' ')}</div>`; };
     drawFam(); drawIdeo(); drawSec(); drawSum();
     el.append(left, right);
     return el;
   }
   function partyPolitics(P) {
-    const el = h('div', { class: 'grid c2' });
-    const left = h('div', { class: 'panel' });
-    left.innerHTML = `<h3>Finjustera politiken</h3><p class="help">Utgångsläget kommer från ideologin. Flytta axlarna fritt – positionerna avgör vilka väljare ni lockar och vilka partier som vill samarbeta.</p><div id="axes"></div>`;
-    const axesEl = left.querySelector('#axes');
-    for (const is of ISSUES) axesEl.append(axisRow(is, P.pos[is.id], (v) => { P.pos[is.id] = v; P.tuned = true; }));
-    const right = h('div', { class: 'panel' });
-    right.innerHTML = `<h3>Hjärtefrågor <small class="muted">(välj upp till 3)</small></h3><p class="help">Frågor ni profilerar er på. Väljare som bryr sig om dem lyssnar extra på er, och ni får bonus i debatter om dem.</p><div class="chips" id="profile"></div>
-      <h3 style="margin-top:14px">Bredd eller skärpa</h3><p class="help">Ett brett, pragmatiskt parti tolererar att väljare står en bit ifrån – men kärnväljarna är mindre lojala och trovärdigheten lägre. Ett smalt, ideologiskt parti har lojala kärnväljare men svårare att växa.</p><div class="axis" id="bredd"></div>`;
-    const prof = right.querySelector('#profile');
-    for (const is of ISSUES) { const c = h('span', { class: 'chip ' + (P.profile[is.id] ? 'on' : ''), onclick: () => { if (P.profile[is.id]) delete P.profile[is.id]; else if (Object.keys(P.profile).length < 3) P.profile[is.id] = 1.6; else return; c.classList.toggle('on', !!P.profile[is.id]); } }, is.name); prof.append(c); }
-    const b = right.querySelector('#bredd');
-    b.innerHTML = `<div class="name"><span style="color:var(--text)">Partiets karaktär</span><span id="bv">${breddLabel(P.structure.bredd)}</span></div><div class="l">Smalt & ideologiskt</div><input type="range" min="0" max="100" value="${P.structure.bredd}"><div class="r">Brett & pragmatiskt</div>`;
-    b.querySelector('input').addEventListener('input', (e) => { P.structure.bredd = +e.target.value; b.querySelector('#bv').textContent = breddLabel(P.structure.bredd); });
-    el.append(left, right);
-    return el;
+    return partyPoliticsStep(P, { tab: polTab, setTab: (t) => { polTab = t; render(); }, ideologyName: ideologyLabel(P.ideology.primary, P.ideology.secondary) });
   }
-  const breddLabel = (v) => v < 25 ? 'Smalt ideologiskt parti' : v < 45 ? 'Tydlig profil' : v < 60 ? 'Balanserat' : v < 80 ? 'Brett folkparti' : 'Catch-all-parti';
   function partyOrganisation(P) {
     const el = h('div', { class: 'grid c2' });
     const S = P.structure;
@@ -185,15 +175,6 @@ export function renderSetup({ onDone, onCancel }) {
     el.append(left, right);
     return el;
   }
-  function axisRow(is, value, onChange) {
-    const row = h('div', { class: 'axis' });
-    const nm = h('div', { class: 'name' }, h('span', { style: 'color:var(--text)' }, is.name), h('span', {}, issueLabel(is.id, value)));
-    const inp = h('input', { type: 'range', min: -100, max: 100, value });
-    inp.addEventListener('input', () => { onChange(+inp.value); nm.lastChild.textContent = issueLabel(is.id, +inp.value); });
-    row.append(nm, h('div', { class: 'l' }, is.left), inp, h('div', { class: 'r' }, is.right));
-    return row;
-  }
-
   // ---------- LEDAREN ----------
   function stepLeader() {
     const el = h('div', {});
@@ -228,7 +209,7 @@ export function renderSetup({ onDone, onCancel }) {
   function buildDef() {
     const P = draft.party;
     return { mode: draft.mode, takeoverId: draft.takeoverId, slot: draft.slot,
-      party: draft.mode === 'new' ? { name: P.name, abbr: P.abbr, color: P.color, color2: P.color2, logo: { ...P.logo, glyph: P.abbr }, slogan: P.slogan, pos: { ...P.pos }, profile: { ...P.profile }, ideology: { primary: P.ideology.primary, secondary: [...P.ideology.secondary] }, structure: { ...P.structure, malgrupper: [...P.structure.malgrupper] }, manifesto: P.manifesto || '', ideologyName: P.ideologyName || '', logoImage: P.logoImage || null } : null,
+      party: draft.mode === 'new' ? { name: P.name, abbr: P.abbr, color: P.color, color2: P.color2, logo: { ...P.logo, glyph: P.abbr }, slogan: P.slogan, pos: { ...P.pos }, program: { ...P.program }, profile: { ...P.profile }, ideology: { primary: P.ideology.primary, secondary: [...P.ideology.secondary] }, structure: { ...P.structure, malgrupper: [...P.structure.malgrupper] }, manifesto: P.manifesto || '', ideologyName: P.ideologyName || '', logoImage: P.logoImage || null } : null,
       leader: finalizeLeader(draft.leader) };
   }
   render();

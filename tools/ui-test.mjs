@@ -22,7 +22,33 @@ await page.fill('#pname', 'Bildpartiet'); await page.fill('#pabbr', 'BP');
 await page.setInputFiles('#plogofile', LOGO); await sleep(600);
 ok(await page.evaluate(() => !!document.querySelector('#logoPreview image')), 'logotypbilden visas i förhandsvisningen');
 await shot('01-logo');
-for (let k = 0; k < 4; k++) { await page.click('.btn.gold.big'); await sleep(250); }
+await page.click('.btn.gold.big'); await sleep(250); // → ideologi
+await page.locator('#fam button', { hasText: 'Vänster' }).click(); await sleep(150);
+await page.locator('#ideo .opt', { hasText: /^Anarkism/ }).first().click(); await sleep(300);
+await page.click('.btn.gold.big'); await sleep(400); // → politiken
+ok(await page.locator('.axis.xaxis').count() === 9, 'politiksteget: nio kompassreglage');
+ok(/anarkism|statslös/i.test(await page.locator('.axis.xaxis').nth(1).textContent()), 'Makt-axeln går hela vägen till anarkism');
+await page.evaluate(() => { const r = [...document.querySelectorAll('.axis.xaxis input[type=range]')][1]; r.value = r.max; r.dispatchEvent(new Event('input')); r.dispatchEvent(new Event('change')); }); await sleep(500);
+ok(/totalit|auktorit/i.test(await page.locator('.axis.xaxis').nth(1).locator('.name').textContent()), 'Makt dragen mot totalitär skriver om programmet');
+ok(await page.locator('.polsum .xbanner').count() === 1, 'ytterlighetsbannern visas för ett totalitärt program');
+await shot('01b-politik-kompass');
+await page.locator('.tabs button', { hasText: 'Sakfrågorna' }).click(); await sleep(300);
+ok(await page.locator('.axis.xaxis').count() === 12, 'sakfrågorna: tolv reglage');
+ok(/återvandring/i.test(await page.locator('.axis.xaxis', { hasText: 'Migration' }).textContent()), 'migration går från inga gränser till storskalig återvandring');
+await page.locator('.tabs button', { hasText: 'Alla' }).click(); await sleep(300);
+await page.fill('#polsok', 'återvandring'); await sleep(500);
+const atv = page.locator('#pollist .item', { hasText: 'Återvandring per år' }).first();
+ok(await atv.count() === 1, 'återvandringsreglaget hittas i sökningen');
+await atv.locator('.pnum').fill('250000'); await atv.locator('.pnum').dispatchEvent('change'); await sleep(300);
+ok(/250 000/.test(await atv.textContent()) && /Ytterlighet/.test(await atv.textContent()), 'eget antal återvandrare (250 000) med ytterlighetsvarning');
+await shot('01c-politik-omraden');
+await page.locator('.tabs button', { hasText: 'egna ord' }).click(); await sleep(300);
+await page.fill('#pptext', 'Avskaffa de allmänna valen och inför 120 000 i återvandring per år.'); await page.click('#pptolka'); await sleep(1200);
+ok(await page.locator('#ppres .item').count() >= 2, `politik med egna ord i partiskaparen (${await page.locator('#ppres .item').count()})`);
+await page.locator('#ppres .btn.gold').click(); await sleep(400);
+await shot('01d-politik-ord');
+await page.click('.btn.gold.big'); await sleep(250); // → organisation
+await page.click('.btn.gold.big'); await sleep(250); // → målgrupper
 // --- ledarskaparen: anpassa figuren ---
 await page.click('.btn.gold.big'); await sleep(400);
 await page.fill('#first', 'Lisa'); await page.fill('#last', 'Färg');
@@ -38,6 +64,7 @@ await page.click('.btn.gold.big'); await sleep(300);
 await page.locator('.saves .save').first().click(); await sleep(100);
 await page.click('text=Starta spelet'); await sleep(1200);
 ok(await page.evaluate(() => !!window.BPM.G.state.people.player.spriteLook && !!window.BPM.G.state.parties.ny.logoImage), 'anpassning och logotyp sparades i spelet');
+ok(await page.evaluate(() => { const p = window.BPM.G.state.parties.ny; return p.program.atervandring_antal === 120000 && p.program.allmanna_val === 'avskaffade' && p.ext >= 2 && p.demo <= -2 && p.cordon.length === 0 && Object.values(window.BPM.G.state.parties).filter((q) => q.id !== 'ny').every((q) => q.cordon.includes('ny')); }), 'ytterlighetsprogrammet följer med: extremism, demokratisyn och cordon sanitaire');
 await shot('03-oversikt');
 // --- debatt med känslor: förolämpa motståndaren ---
 await page.evaluate(() => { window.BPM.G.state.queue.push({ type: 'debate', debate: 'tv' }); });

@@ -208,13 +208,65 @@ const mm = monthlyMinisters(state, rnd); ok(Array.isArray(mm), 'ministrar: måna
   const fl = fromLocalAnalysis({ sammanfattning: 'x', amnen: ['valfard'], vill: ['ekonomi: högre skatt, större offentlig sektor'], ton: 'kansla', forolampar: 'nej', hanar: 'nej', berommer: 'tydligt', hotar: 'nej', empati: 'lite', medger: 'nej', upprord: 'nej', svarar: 'ja', angriper: ['S'], lofte: ['fler sjuksköterskor'] }, [{ id: 's', abbr: 'S' }]);
   ok(fl.stance.ekonomi === -1 && fl.topics.includes('valfard') && fl.emotion.praise === 1 && fl.attacks[0] === 's', 'prompter: modellens svar översätts rätt');
 }
+// --- ytterligheter: från anarkism till totalitarism, från inga gränser till storskalig återvandring ---
+{
+  const { POLICIES, POLICY_BY_ID, norm, denorm, normalRange, valueMarks, hasExtreme } = await import('../js/data/policies.js');
+  const P = await import('../js/sim/policy.js');
+  const { aiVote } = await import('../js/sim/riksdag.js');
+  const xs = POLICIES.filter(hasExtreme);
+  ok(xs.length >= 25, `ytterligheter: ${xs.length} områden har ytterlighetsalternativ`);
+  const sl = POLICIES.filter((p) => p.type === 'slider' && (p.xFrom != null || p.xTo != null));
+  ok(sl.every((p) => { const [lo, hi] = normalRange(p); return lo <= p.def && p.def <= hi && (hi === p.def || Math.abs(norm(p, hi) - 1) < 1e-9) && (lo === p.def || Math.abs(norm(p, lo) + 1) < 1e-9); }), `ytterligheter: normalt spann runt dagens lag för ${sl.length} reglage`);
+  ok(sl.every((p) => [-.6, -.2, .3, .8].every((t) => { const v = denorm(p, t); return Math.abs(norm(p, v) - t) < .12 || (t < 0 && normalRange(p)[0] === p.def) || (t > 0 && normalRange(p)[1] === p.def); })), 'ytterligheter: norm/denorm hänger ihop');
+  const atv = POLICY_BY_ID.atervandring_antal;
+  ok(atv && atv.max >= 500000 && norm(atv, 300000) > 1 && valueMarks(atv, 300000).ext >= 1, 'återvandring: eget antal upp till 500 000/år, 300 000 = ytterlighet');
+  ok(IDEOLOGIES.every((i) => { const pr = P.programFromAxes(i.pos); return POLICIES.every((p) => !valueMarks(p, pr[p.id]).x); }), 'ytterligheter: AI-partiernas program väljer aldrig ytterlighetsalternativ');
+  const base = P.programFromAxes(IDEOLOGIES.find((i) => i.id === 'centrism').pos);
+  const tot = P.steerProgram({ ...base }, 'comp', 'auk', 150); const pt = P.programExtremism(tot);
+  ok(P.compassExt(tot).auk > 100 && pt.demo <= -2, `kompassen: Makt +150 ger ett totalitärt program (auk ${P.compassExt(tot).auk}, demo ${pt.demo})`);
+  const ana = P.steerProgram({ ...base }, 'comp', 'auk', -150);
+  ok(P.compassExt(ana).auk < -100 && P.programExtremism(ana).ext >= 2, `kompassen: Makt −150 ger anarkism (auk ${P.compassExt(ana).auk}, ext ${P.programExtremism(ana).ext})`);
+  const mid = P.steerProgram({ ...base }, 'comp', 'auk', 60);
+  ok(Math.abs(P.compassExt(mid).auk - 60) <= 12 && !P.programExtremism(mid).items.some((i) => valueMarks(POLICY_BY_ID[i.id], mid[i.id]).x), `kompassen: Makt +60 träffas utan ytterligheter (${P.compassExt(mid).auk})`);
+  const mig = P.steerProgram({ ...base }, 'axes', 'migration', 150);
+  ok(P.axesExt(mig).migration > 100 && (mig.atervandring_antal || 0) > normalRange(atv)[1], `sakfrågor: migration +150 = storskalig återvandring (${mig.atervandring_antal}/år)`);
+  const open = P.steerProgram({ ...base }, 'axes', 'migration', -150);
+  ok(P.axesExt(open).migration < -100, `sakfrågor: migration −150 = inga gränser (${P.axesExt(open).migration})`);
+  // nytt parti med ytterlighetsprogram
+  const xprog = { ...tot, atervandring_antal: 300000 };
+  const g2 = newGame({ seed: 11, mode: 'new', party: { ...partyDef, program: xprog }, leader: leaderDef });
+  const np = g2.state.parties.ny;
+  ok(np.program.atervandring_antal === 300000 && np.ext >= 2 && np.demo <= -2, `nytt parti: programmet från skaparen gäller (ext ${np.ext}, demo ${np.demo})`);
+  ok(Object.values(g2.state.parties).filter((q) => q !== np).every((q) => q.cordon.includes('ny')), 'nytt parti: antidemokratiskt program → cordon sanitaire');
+  // avskaffade val: valdagen passerar utan val
+  { const s2 = g2.state; const y0 = s2.election.next.y; s2.policy.allmanna_val = 'avskaffade'; s2.date = { ...s2.election.next }; endWeek(s2, g2.rnd); s2.queue.length = 0;
+    ok(!s2.election.pending && s2.election.next.y === y0 + 4 && s2.election.cancelled === 1, 'avskaffade val: valdagen passerar utan val, nästa "val" fyra år bort'); }
+  // radikalisering mitt i spelet
+  const savedCordon = Object.fromEntries(Object.values(state.parties).map((q) => [q.id, [...(q.cordon || [])]])); for (const q of Object.values(state.parties)) q.cordon = (q.cordon || []).filter((id) => id !== me.id);
+  const before = state.parties.s.cordon.includes(me.id);
+  const pick = POLICIES.flatMap((p) => p.type === 'choice' ? p.options.filter((o) => (o.demo || 0) <= -3).map((o) => [p, o]) : []);
+  ok(pick.length >= 3, `totalitära alternativ finns (${pick.map(([p, o]) => p.id + ':' + o.id).slice(0, 4).join(', ')})`);
+  const saveProg = { ...me.program }; const saveExt = me.ext, saveDemo = me.demo; const newsN = state.news.length;
+  for (const [p, o] of pick.slice(0, 2)) me.program[p.id] = o.id;
+  P.syncAxes(me); P.refreshExtremism(state, me, rnd);
+  ok(!before && state.parties.s.cordon.includes(me.id) && me.demo <= -2 && state.news.some((n) => n.partyId === me.id && /radikalis|demokratin/.test(n.headline)), 'radikalisering: övriga partier stänger dörren, medierna rapporterar');
+  // riksdagen röstar nej till att avskaffa demokratin
+  const [pp, oo] = pick[0];
+  const bl = P.billLike(state, { policyId: pp.id, from: pp.def, to: oo.id });
+  ok(activeParties(state).filter((q) => !q.isPlayer).every((q) => aiVote(state, q, bl, state.government.pmParty) !== 'ja'), `riksdagen: ingen röstar ja till ${pp.name.toLowerCase()} = ${oo.name.toLowerCase()}`);
+  me.program = saveProg; P.syncAxes(me); P.refreshExtremism(state, me, rnd); me.ext = saveExt; me.demo = saveDemo;
+  ok(!state.parties.s.cordon.includes(me.id), 'avradikalisering: cordon hävs när ytterligheterna stryks');
+  for (const q of Object.values(state.parties)) q.cordon = savedCordon[q.id] || [];
+}
 // --- några veckor med allt på ---
 let errors = 0;
 for (let w = 0; w < 30; w++) { try { endWeek(state, rnd); state.queue.length = 0; } catch (e) { errors++; console.error(e.stack); break; } }
 ok(errors === 0, '30 veckor utan fel med minne, läckor och trötthet');
+{ const { POLICIES, valueMarks } = await import('../js/data/policies.js'); ok(Object.values(state.parties).filter((q) => !q.isPlayer).every((q) => POLICIES.every((p) => !valueMarks(p, q.program?.[p.id]).x)), 'AI-partiernas program glider aldrig in i ytterligheter'); }
 ok(Number.isFinite(l.fatigue), `trötthet spåras (${l.fatigue})`);
 // migrering av gammal sparning
 const old = JSON.parse(JSON.stringify(state)); delete old.memory; delete old.secretDeals; old.v = 3;
-migrate(old); ok(old.memory && old.secretDeals && old.v >= 5, 'migrering: v3 → dagens format lägger till minne');
+migrate(old); ok(old.memory && old.secretDeals && old.v >= 6, 'migrering: v3 → dagens format lägger till minne');
+{ const o5 = JSON.parse(JSON.stringify(state)); o5.v = 5; delete o5.flags.signFix; o5.parties.m.program.agande_bank = 'nationaliserade'; migrate(o5); ok(o5.parties.m.program.agande_bank === 'privat' && o5.v === 6, 'migrering v5 → v6: M:s bankpolitik räknas om med rätt tecken'); }
 console.log(`\n${pass} gröna, ${fail} röda`);
 process.exit(fail ? 1 : 0);

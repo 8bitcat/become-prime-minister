@@ -11,14 +11,14 @@ import { rollScandals, decayScandals } from './scandals.js';
 import { weeklySocial } from './social.js';
 import { stepWorld } from './world.js';
 import { addNews, newsFromNotes, newsFromPoll, weeklyFlavor } from './news.js';
-import { computeElection } from './election.js';
+import { computeElection, nextElectionDay } from './election.js';
 import { isPlayerPM, playerInGov, aiBudget, dissolveGovernment, formGovernmentAI } from './government.js';
 import { makePerson } from './people.js';
 import { monthlyParty, installLeader, structureEffects, defaultStructure } from './party.js';
 import { weeklyMedia } from './media.js';
 import { updateTrust, checkPromises, setManifest } from './promises.js';
 import { IDEOLOGIES, IDEOLOGY_BY_ID } from '../data/ideologies.js';
-import { stepReforms, capitalRegen, aiGovernmentReforms, aiProgramDrift, syncAxes, programFromAxes, axesFromProgram, proposeReform, reformCost, POLICY_BY_ID, policyLabel, reformTitle } from './policy.js';
+import { stepReforms, capitalRegen, aiGovernmentReforms, aiProgramDrift, syncAxes, programFromAxes, refreshExtremism, effectiveLaw, axesFromProgram, proposeReform, reformCost, POLICY_BY_ID, policyLabel, reformTitle } from './policy.js';
 import { digOldStatement, checkTextPromises, initMemory } from '../ai/memory.js';
 import { leakSecretDeals, utspelEffect } from './talk.js';
 import { monthlyMinisters } from './government.js';
@@ -177,6 +177,19 @@ function aiPartyMonth(state, rnd) {
 function electionCalendar(state, rnd, report) {
   const el = state.election;
   const days = dayDiff(state.date, el.next);
+  // inställda eller avskaffade val (ytterlighetslagstiftning): ingen valrörelse, inget val – bara följderna
+  const valLag = effectiveLaw(state).allmanna_val;
+  if (valLag === 'uppskjutna' || valLag === 'avskaffade') {
+    if (days <= 0) {
+      el.campaign = false; el.cancelled = (el.cancelled || 0) + 1;
+      el.next = nextElectionDay(el.next.y + 4);
+      const st = state.sweden.stats; if (st.protester != null) st.protester = clamp(st.protester + 20, 0, 100);
+      for (const q of Object.values(state.parties)) if (!state.government.parties.includes(q.id) && q.active) q.relations[state.government.pmParty] = clamp((q.relations[state.government.pmParty] || 0) - 25, -100, 100);
+      addNews(state, { outlet: pick(rnd, ['dn', 'svt', 'expressen']), headline: valLag === 'avskaffade' ? 'Ingen valdag i år – de allmänna valen är avskaffade' : 'Valet ställs in igen – "krisläget" förlängs', body: 'Oppositionen talar om statskupp. EU-kommissionen fryser stöd, valobservatörer från OSSE nekas inresa och tusentals demonstrerar i Stockholm, Göteborg och Malmö.', tags: ['val', 'demokrati'], importance: 3, tone: -1 });
+      report.items.push(valLag === 'avskaffade' ? '🗳️ Inget val hålls – de allmänna valen är avskaffade. Protesterna växer.' : '🗳️ Valet sköts upp. Oppositionen kallar det en statskupp.');
+    }
+    return;
+  }
   if (!el.campaign && days <= 56 && days > 0) {
     el.campaign = true; el.debatesDone = []; el.campaignNoise = 1;
     const pc = checkPromises(state, rnd); if (pc) report.items.push(`📋 Löfteskollen: ${pc.kept} hållna, ${pc.broken} brutna${pc.inPower ? '' : ' (ni satt i opposition)'}.`);
@@ -324,7 +337,7 @@ export function doAction(state, rnd, id, params = {}) {
       const changes = params.changes || {}; let nChanged = 0;
       p.program ||= programFromAxes(p.pos);
       for (const id in changes) { if (p.program[id] !== changes[id]) { p.program[id] = changes[id]; nChanged++; } }
-      syncAxes(p);
+      syncAxes(p); refreshExtremism(state, p, rnd);
       const cost = Math.min(6, nChanged * .6) * (p.inRiksdag ? 1.3 : 1);
       p.credibility = clamp(p.credibility - cost, 0, 100); p.unity = clamp(p.unity - Math.min(5, nChanged * .4), 0, 100);
       for (const f of p.factions || []) f.mood = clamp(f.mood - nChanged * .5, -100, 100);

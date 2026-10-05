@@ -1,8 +1,10 @@
 // Politiksystemet: gällande lag, partiprogram, härledd ideologi, reformer genom riksdagen,
 // politiskt kapital, myndigheternas kapacitet, genomförandetid och oavsiktliga konsekvenser.
-import { POLICIES, POLICY_BY_ID, DOMAINS, COMPASS, norm, defaultPolicy, policyLabel } from '../data/policies.js';
+import { POLICIES, POLICY_BY_ID, DOMAINS, COMPASS, norm, denorm, normalRange, valueMarks, hasExtreme, needsKonst, defaultPolicy, policyLabel } from '../data/policies.js';
+// grundlag: hela området eller det enskilda alternativet – åt båda hållen (att riva upp en grundlagsfäst ytterlighet kräver också två beslut)
+export const isKonst = (p, from, to) => needsKonst(p, to) || needsKonst(p, from);
 import { ISSUES } from '../data/issues.js';
-import { IDEOLOGIES, IDEOLOGY_BY_ID } from '../data/ideologies.js';
+import { IDEOLOGIES, IDEOLOGY_BY_ID, combinePositions } from '../data/ideologies.js';
 import { STAT_BY_ID } from '../data/stats.js';
 import { clamp, pick, gauss } from '../core/util.js';
 import { addNews } from './news.js';
@@ -48,10 +50,45 @@ export function programFromAxes(pos) {
     let target = 0, wsum = 0;
     for (const [ax, w] of axes) { target += ((pos[ax] || 0) / 100) * Math.sign(w) * Math.abs(w); wsum += Math.abs(w); }
     target = wsum ? clamp(target / wsum / PROGRAM_DIV, -1, 1) : 0;
-    if (p.type === 'choice') program[p.id] = p.options.slice().sort((a, b) => Math.abs(a.v - target) - Math.abs(b.v - target))[0].id;
-    else { const raw = target >= 0 ? p.def + target * (p.max - p.def) : p.def + target * (p.def - p.min); program[p.id] = Math.round(raw / p.step) * p.step; if (!Number.isInteger(p.step)) program[p.id] = Math.round(program[p.id] * 100) / 100; }
+    program[p.id] = denorm(p, target); // ytterlighetsalternativen väljs aldrig av sig själva
   }
   return program;
+}
+// Ideologins kännetecken: de ytterlighetskrav som gör en ideologi till vad den är (anarkism utan stat,
+// fascism med enpartistat …). Läggs ovanpå startprogrammet när spelaren väljer ideologi i partiskaparen.
+// Värdet är ett tal (reglage) eller ett mönster som matchar alternativets namn.
+const STATSLOST = { styrelseform: /statslös|anarki/i, polis_inriktning: /avskaffa|medborgargarde/i, fangelse: /avskaffa/i };
+const PARTISTAT = { styrelseform: /enparti/i, allmanna_val: /avskaffa/i, oppositionspartier: /all opposition/i, press: /propaganda|förstatlig/i, yttrandefrihet: /censur/i, polis_inriktning: /hemlig polis/i };
+export const IDEOLOGY_SIGNATURES = {
+  anarkism: { ...STATSLOST, granskontroll: /inga gränser/i },
+  anarkokommunism: { ...STATSLOST, privat_egendom: /avskaffa/i },
+  anarkosyndikalism: { ...STATSLOST, privat_egendom: /exproprier/i },
+  radskommunism: { styrelseform: /direktdemokrati|folkomröstning/i, privat_egendom: /exproprier/i, agande_industri: /planekonomi|förstatlig/i },
+  kommunism: { privat_egendom: /avskaffa/i, agande_industri: /planekonomi|förstatlig/i, skattesystem: /90/ },
+  marxism: { privat_egendom: /exproprier/i, agande_industri: /planekonomi|förstatlig/i },
+  marxism_leninism: { ...PARTISTAT, polis_inriktning: /hemlig polis/i, privat_egendom: /avskaffa/i, agande_industri: /planekonomi|förstatlig/i, religion: /förbjud|statsateism/i, hyror: /förstatlig/i },
+  trotskism: { privat_egendom: /exproprier/i, agande_industri: /planekonomi|förstatlig/i },
+  syndikalism: { privat_egendom: /exproprier/i },
+  ekosocialism: { tillvaxtpolitik: /nerväxt/i, privatbilism: /innerstäder/i },
+  minarkism: { skattesystem: /ingen inkomstskatt/i, centralbank: /ingen centralbank/i, privat_egendom: /absolut/i },
+  libertarianism: { skattesystem: /platt/i, privat_egendom: /absolut/i },
+  monarkism: { styrelseform: /auktoritärt|begränsade val/i },
+  teknokrati: { styrelseform: /teknokrat/i },
+  korporativism: { strejkratt: /begränsad/i, arbetsplikt: /bidrag/i },
+  federalism: { eu: /förenta stater|delstat/i },
+  kristen_nationalism: { invandringsstopp: /asylstopp/i },
+  falangism: { ...PARTISTAT, strejkratt: /förbjud/i, arbetsplikt: /allmän/i },
+  fascism: { ...PARTISTAT, granskontroll: /gränsmur|militär/i, varnplikt: /mobiliser|krigsekonomi/i, strejkratt: /förbjud/i },
+  nationalsocialism: { ...PARTISTAT, granskontroll: /gränsmur|militär/i, varnplikt: /mobiliser|krigsekonomi/i, strejkratt: /förbjud/i, invandringsstopp: /totalt/i },
+};
+export function ideologyProgram(primary, secondary = []) {
+  const prog = programFromAxes(combinePositions(primary, secondary));
+  for (const [pid, v] of Object.entries(IDEOLOGY_SIGNATURES[primary] || {})) {
+    const p = POLICY_BY_ID[pid]; if (!p) continue;
+    if (p.type === 'choice') { const o = v instanceof RegExp ? p.options.find((x) => v.test(x.name)) : p.options.find((x) => x.id === v); if (o) prog[pid] = o.id; }
+    else if (typeof v === 'number' && v >= p.min && v <= p.max) prog[pid] = v;
+  }
+  return prog;
 }
 export function syncAxes(party) { if (!party.program) return; party.pos = axesFromProgram(party.program); }
 // Ideologiernas lägen i samma (härledda) skala som partiprogrammen – räknas en gång
@@ -69,6 +106,95 @@ export function ideologyDescription(program) {
   const first = near[0], second = near[1];
   const label = first.d < 18 ? first.name : first.d < 30 ? `${first.name} med inslag av ${second.name.toLowerCase()}` : `en egen blandning: ${first.name.toLowerCase()} och ${second.name.toLowerCase()}`;
   return { label, tags, near, compass: c };
+}
+// ---------- YTTERLIGHETER I PROGRAMMET ----------
+// Hur extremt är ett program? ext = högsta extremism (0–3), demo = lägsta demokratisyn (0 … −3).
+// Många radikala punkter eller flera rättighetsinskränkningar höjer graden även om varje punkt är måttlig.
+export function programExtremism(program) {
+  let ext = 0, demo = 0; const items = [];
+  for (const p of POLICIES) {
+    const v = program?.[p.id]; if (v == null) continue;
+    const m = valueMarks(p, v);
+    if (m.ext > 0 || m.demo < 0 || m.x) { const e = m.ext || (m.x ? 1 : 0); items.push({ id: p.id, name: p.name, label: policyLabel(p, v), ext: e, demo: m.demo }); ext = Math.max(ext, e); demo = Math.min(demo, m.demo); }
+  }
+  if (items.filter((i) => i.ext >= 1).length >= 5) ext = Math.max(ext, 2);
+  if (items.filter((i) => i.ext >= 2).length >= 5) ext = 3;
+  if (items.filter((i) => i.demo <= -1).length >= 3) demo = Math.min(demo, -2);
+  items.sort((a, b) => (b.ext - b.demo) - (a.ext - a.demo));
+  return { ext, demo, items };
+}
+export const EXT_NAMES = ['etablerad', 'radikal i enskilda frågor', 'extrem', 'systemfientlig'];
+export const DEMO_NAMES = { 0: 'demokratisk', '-1': 'inskränker rättigheter', '-2': 'monterar ned demokratin', '-3': 'totalitär' };
+// Utvidgad avläsning (−150…150): den vanliga axeln (±100) plus hur långt programmet går in i
+// ytterlighetsområdet på de områden som har ett sådant.
+function readingExt(program, key, list) {
+  const acc = {}, w = {}, ex = {}, wx = {};
+  for (const p of POLICIES) {
+    const c = p[key]; if (!c) continue;
+    const v = program?.[p.id]; if (v == null) continue;
+    const nv = norm(p, v), over = nv - clamp(nv, -1, 1), hx = hasExtreme(p);
+    for (const ax in c) { acc[ax] = (acc[ax] || 0) + nv * c[ax]; w[ax] = (w[ax] || 0) + Math.abs(c[ax]); if (hx) { ex[ax] = (ex[ax] || 0) + over * c[ax]; wx[ax] = (wx[ax] || 0) + Math.abs(c[ax]); } }
+  }
+  const out = {};
+  for (const it of list) { const base = w[it.id] ? clamp((acc[it.id] / w[it.id]) * 140, -100, 100) : 0; const extra = wx[it.id] ? clamp((ex[it.id] / wx[it.id]) * 100 * 3, -50, 50) : 0; out[it.id] = Math.round(clamp(base + extra, -150, 150)); }
+  return out;
+}
+export const compassExt = (program) => readingExt(program, 'comp', COMPASS);
+export const axesExt = (program) => readingExt(program, 'axes', ISSUES);
+// Vilka axlar har alls ett ytterlighetsområde (styr hur långt reglagen i partiskaparen går)
+let XAX = null;
+export function extremeAxes() {
+  if (XAX) return XAX;
+  XAX = { comp: {}, axes: {} };
+  for (const p of POLICIES) if (hasExtreme(p)) { for (const ax in p.comp || {}) XAX.comp[ax] = true; for (const ax in p.axes || {}) XAX.axes[ax] = true; }
+  return XAX;
+}
+// Styr programmet mot ett läge på en axel (−150…150). Områdena som bidrar till axeln dras mot ett
+// gemensamt läge g (starkare bidrag flyttas mer); g söks med bisektion tills avläsningen träffar målet.
+// Bortom ±100 öppnas ytterlighetsalternativen.
+export function steerProgram(program, key, ax, target) {
+  const rel = POLICIES.filter((p) => Math.abs(p[key]?.[ax] || 0) >= .2);
+  if (!rel.length) return program;
+  const orig = Object.fromEntries(rel.map((p) => [p.id, program[p.id] ?? p.def]));
+  const maxW = Math.max(...rel.map((p) => Math.abs(p[key][ax])));
+  const read = key === 'comp' ? () => compassExt(program)[ax] : () => axesExt(program)[ax];
+  const apply = (g) => {
+    for (const p of rel) {
+      const wgt = p[key][ax], on = norm(p, orig[p.id]);
+      const f = Math.min(1, (Math.abs(wgt) / maxW) * 1.6);
+      program[p.id] = denorm(p, on + (Math.sign(wgt) * g - on) * f, Math.abs(g) > 1.02);
+    }
+  };
+  let lo = -1.5, hi = 1.5;
+  for (let i = 0; i < 16; i++) { const mid = (lo + hi) / 2; apply(mid); if (read() < target) lo = mid; else hi = mid; }
+  apply(lo); const rl = Math.abs(read() - target); apply(hi); const rh = Math.abs(read() - target);
+  if (rl < rh) apply(lo);
+  return program;
+}
+// Partiets extremism = det värsta av ideologin och programmet. Används när spelaren skriver om
+// programmet under spelets gång: riksdagspartierna drar upp en "cordon sanitaire", medierna rapporterar.
+export function refreshExtremism(state, party, rnd) {
+  const pe = programExtremism(party.program || {});
+  const sec = party.ideology?.secondary || [];
+  const ideoExt = Math.max(IDEOLOGY_BY_ID[party.ideology?.primary]?.ext || 0, ...sec.map((id) => IDEOLOGY_BY_ID[id]?.ext || 0));
+  const ideoDemo = Math.min(IDEOLOGY_BY_ID[party.ideology?.primary]?.demo || 0, ...sec.map((id) => IDEOLOGY_BY_ID[id]?.demo || 0));
+  const before = { ext: party.ext || 0, demo: party.demo || 0 };
+  party.ext = Math.max(ideoExt, pe.ext); party.demo = Math.min(ideoDemo, pe.demo);
+  if (!state) return pe;
+  const worse = party.ext > before.ext || party.demo < before.demo;
+  if (worse && (party.ext >= 2 || party.demo <= -2)) {
+    for (const q of Object.values(state.parties)) {
+      if (q === party || !q.active) continue;
+      if (!q.cordon.includes(party.id) && (q.ext || 0) < 2) q.cordon.push(party.id);
+      q.relations[party.id] = clamp((q.relations[party.id] || 0) - (party.ext >= 3 || party.demo <= -2 ? 30 : 15), -100, 100);
+    }
+    const top = pe.items.slice(0, 2).map((i) => `${i.name.toLowerCase()}: ${i.label.toLowerCase()}`).join(' och ');
+    addNews(state, { outlet: rnd ? pick(rnd, ['dn', 'svd', 'svt', 'expressen']) : 'dn', headline: party.demo <= -2 ? `${party.abbr} vill montera ned demokratin – samtliga partier tar avstånd` : `${party.abbr} radikaliseras – övriga partier stänger dörren`, body: `Statsvetare beskriver programmet som ${EXT_NAMES[party.ext]}${party.demo < 0 ? ' och ' + DEMO_NAMES[party.demo] : ''}. Övriga partier utesluter samarbete.${top ? ' Mest uppmärksammat – ' + top + '.' : ''}`, tags: ['parti', 'extremism'], partyId: party.id, importance: 3 });
+  } else if ((party.ext < before.ext || party.demo > before.demo) && (before.ext >= 2 || before.demo <= -2) && party.ext <= 1 && party.demo > -2) {
+    for (const q of Object.values(state.parties)) if (q !== party) q.cordon = (q.cordon || []).filter((id) => id !== party.id);
+    addNews(state, { outlet: 'svt', headline: `${party.abbr} stryker de mest extrema kraven ur programmet`, body: 'Kritiker är tveksamma: "Ett omskrivet program gör inte partiet trovärdigt över en natt."', tags: ['parti'], partyId: party.id, importance: 2 });
+  }
+  return pe;
 }
 // Partiprogram i text, domän för domän
 export function programText(party) {
@@ -105,13 +231,13 @@ export function policyEffects(state) {
 export function reformCost(p, from, to) {
   const d = Math.abs(norm(p, to) - norm(p, from));
   const domMult = { demokrati: 1.6, frihet: 1.4, utrikes: 1.4, ekonomi: 1.2 }[p.domain] || 1;
-  return Math.round((4 + d * 14) * domMult * (p.konst ? 2 : 1));
+  return Math.round((4 + d * 14) * domMult * (isKonst(p, from, to) ? 2 : 1));
 }
 export const reformTitle = (p, to) => `${p.name}: ${policyLabel(p, to)}`;
 export function billLike(state, item) {
   const p = POLICY_BY_ID[item.policyId];
   const to = item.to, from = item.from;
-  return { id: 'reform:' + p.id, kind: 'reform', policyId: p.id, title: reformTitle(p, to), desc: `${p.desc || ''} Från ${policyLabel(p, from)} till ${policyLabel(p, to)}.${p.konst ? ' Grundlagsändring: kräver två beslut med val emellan.' : ''} Full effekt efter ${p.lag} månader.`, area: DOMAIN_ISSUE[p.domain] || 'ekonomi', vec: {}, cost: Math.round((p.cost(to) || 0) - (p.cost(from) || 0)), from, to, konst: !!p.konst };
+  return { id: 'reform:' + p.id, kind: 'reform', policyId: p.id, title: reformTitle(p, to), desc: `${p.desc || ''} Från ${policyLabel(p, from)} till ${policyLabel(p, to)}.${isKonst(p, from, to) ? ' Grundlagsändring: kräver två beslut med val emellan.' : ''} Full effekt efter ${p.lag} månader.`, area: DOMAIN_ISSUE[p.domain] || 'ekonomi', vec: {}, cost: Math.round((p.cost(to) || 0) - (p.cost(from) || 0)), from, to, konst: isKonst(p, from, to) };
 }
 // Hur ett parti ser på en reform: närmare det egna programmet = bra
 export function reformStance(party, item) {
@@ -131,7 +257,8 @@ export function proposeReform(state, rnd, proposerId, policyId, to, { byPlayer =
 // Reformen antogs: starta genomförandet (eller lägg den vilande om grundlag)
 export function applyReform(state, rnd, item) {
   const p = POLICY_BY_ID[item.policyId];
-  if (p.konst && !item.second) {
+  const konst = isKonst(p, item.from, item.to);
+  if (konst && !item.second) {
     (state.riksdag.vilande ||= []).push({ policyId: item.policyId, to: item.to, from: item.from, proposer: item.proposer, byPlayer: item.byPlayer, year: state.election.next.y });
     addNews(state, { outlet: 'svt', headline: `Grundlagsändring vilande: ${reformTitle(p, item.to)}`, body: 'Riksdagen antog förslaget en första gång. Det träder i kraft bara om nästa riksdag, efter valet, antar det igen.', tags: ['riksdag', 'grundlag'], importance: 3 });
     return { pending: true };
@@ -139,10 +266,10 @@ export function applyReform(state, rnd, item) {
   state.reforms = (state.reforms || []).filter((r) => r.policyId !== item.policyId);
   const mult = p.type === 'choice' ? 1 : clamp(gauss(rnd, 1, .15), .6, 1.4);
   const side = rnd() < .25 ? pick(rnd, SIDE_EFFECTS[p.domain] || SIDE_EFFECTS.generic) : null;
-  state.reforms.push({ policyId: item.policyId, from: item.from, to: item.to, start: state.week, months: Math.max(1, p.lag), progress: p.lag <= 1 ? 1 : 0, mult, side, konst: !!p.konst });
+  state.reforms.push({ policyId: item.policyId, from: item.from, to: item.to, start: state.week, months: Math.max(1, p.lag), progress: p.lag <= 1 ? 1 : 0, mult, side, konst });
   state.policy[item.policyId] = item.to;
   (state.sweden.reforms ||= []).push({ billId: 'reform:' + item.policyId, title: reformTitle(p, item.to), date: { ...state.date }, proposer: item.proposer });
-  state.history.timeline.push({ date: { ...state.date }, week: state.week, kind: 'reform', text: `${reformTitle(p, item.to)}${p.konst ? ' (grundlag)' : ''}.` });
+  state.history.timeline.push({ date: { ...state.date }, week: state.week, kind: 'reform', text: `${reformTitle(p, item.to)}${konst ? ' (grundlag)' : ''}.` });
   if (side) addNews(state, { outlet: pick(rnd, ['dn', 'svd', 'ekot']), headline: `Experter varnar: ${reformTitle(p, item.to).toLowerCase()} kan få oväntade effekter`, body: side.text, tags: ['politik'], importance: 1 });
   return { pending: false };
 }
@@ -207,8 +334,8 @@ export function aiProgramDrift(state, rnd, party, axisDelta) {
     for (let i = 0; i < reps && cands.length; i++) {
       const p = pick(rnd, cands); const dir = Math.sign(d) * Math.sign(p.axes[ax]);
       const cur = party.program[p.id] ?? p.def;
-      if (p.type === 'choice') { const opts = p.options.slice().sort((a, b) => a.v - b.v); const idx = opts.findIndex((o) => o.id === cur); const ni = clamp(idx + dir, 0, opts.length - 1); if (rnd() < .3) party.program[p.id] = opts[ni].id; }
-      else { const nv = clamp(cur + dir * p.step * Math.max(1, Math.round((p.max - p.min) / p.step * .04)), p.min, p.max); party.program[p.id] = Number.isInteger(p.step) ? Math.round(nv) : Math.round(nv * 100) / 100; }
+      if (p.type === 'choice') { const opts = p.options.filter((o) => !o.x || o.id === cur).sort((a, b) => a.v - b.v); const idx = opts.findIndex((o) => o.id === cur); const ni = clamp(idx + dir, 0, opts.length - 1); if (rnd() < .3 && !opts[ni].x) party.program[p.id] = opts[ni].id; }
+      else { const [lo, hi] = normalRange(p); const nv = clamp(cur + dir * p.step * Math.max(1, Math.round((hi - lo) / p.step * .04)), Math.min(lo, cur), Math.max(hi, cur)); party.program[p.id] = Number.isInteger(p.step) ? Math.round(nv) : Math.round(nv * 100) / 100; }
     }
   }
   syncAxes(party);

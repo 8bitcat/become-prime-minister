@@ -43,8 +43,10 @@ await page.locator('#ideo .opt', { hasText: 'Teknokrati' }).click(); await sleep
 await page.locator('#sec .chip', { hasText: 'Socialliberalism' }).click(); await sleep(150);
 await shot('03b-parti-ideologi');
 await page.click('.btn.gold.big'); await sleep(250); // → politik
-await page.locator('#profile .chip').nth(11).click(); await page.locator('#profile .chip').nth(6).click();
+ok(await page.locator('.polsum').count() === 1 && await page.locator('.axis.xaxis').count() === 9, 'politiksteget: sammanfattning och kompass');
 await shot('03c-parti-politik');
+await page.locator('.tabs button', { hasText: 'Profil' }).click(); await sleep(250);
+await page.locator('#profile .chip').nth(11).click(); await page.locator('#profile .chip').nth(6).click();
 await page.click('.btn.gold.big'); await sleep(250); // → organisation
 await page.locator('#ledarval .opt').nth(0).click(); await sleep(100);
 await shot('03d-parti-organisation');
