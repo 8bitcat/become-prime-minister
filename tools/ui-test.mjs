@@ -57,10 +57,18 @@ ok(await page.evaluate(() => { const s = window.BPM.G.state; return Object.value
 await page.locator('.sidenav button', { hasText: 'Partiet' }).click(); await sleep(400);
 ok(await page.locator('#logoBtn').count() === 1, 'Partiet visar logotypknappen');
 await shot('06-partiet');
-// --- AI-dialogen: smart analys-val ---
-await page.click('#menu'); await sleep(200); await page.locator('.modal .btn', { hasText: 'AI-läge' }).click(); await sleep(300);
-ok(await page.locator('.modal #smart').count() === 1, 'smart analys-valet finns'); await shot('07-ai');
+// --- AI-dialogen: spelets egen modell + Claude som dolt tillval ---
+await page.click('#menu'); await sleep(200); await page.locator('.modal .btn', { hasText: 'Spelets AI' }).click(); await sleep(600);
+ok(await page.locator('.modal #models .opt').count() >= 3 && await page.locator('.modal #loadAi').count() === 1, 'spelets AI: modellstorlekar och startknapp'); await shot('07-ai');
+ok(await page.locator('.modal details #key').count() === 1, 'Claude ligger som dolt tillval');
 await page.locator('.modal .mf .btn.gold').last().click(); await sleep(200);
+ok(await page.locator('#aichip').count() === 1, 'AI-indikatorn finns i toppraden');
+// --- Staben: prata fritt (utan modell: svar byggda på läget) ---
+await page.locator('.sidenav button', { hasText: 'Staben' }).click(); await sleep(400);
+await page.fill('.chatin textarea', 'Hur klarar vi spärren inför valet?'); await page.click('.chatin .btn.gold'); await sleep(800);
+ok(await page.evaluate(() => (window.BPM.G.state.chats?.stab || []).length === 2), 'staben svarar'); await shot('08-staben');
+await page.locator('.tabs button', { hasText: 'Chefsekonomen' }).click(); await sleep(300);
+ok(await page.locator('.chatcard').count() === 1, 'flera rådgivare i staben');
 console.log(errs.length ? 'FEL:\n' + errs.join('\n') : 'Inga konsolfel.');
 console.log(`${pass} gröna, ${fail} röda`); if (errs.length) { console.log('  ✗ inga pageerror/console.error'); }
 await browser.close(); process.exit(fail || errs.length ? 1 : 0);

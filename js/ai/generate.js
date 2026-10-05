@@ -6,6 +6,9 @@ import { pick, fmt, clamp } from '../core/util.js';
 import { llmEnabled, llmReplies, llmText, llmAnalyze } from './llm.js';
 import { analyzeText, splitSentences } from './analyze.js';
 import { smartEnabled, smartReady, loadSmart, embedHits } from './embed.js';
+import { localReady, localJSON } from './local.js';
+import { analysisMessages, fromLocalAnalysis } from './prompts.js';
+import { claudeOn } from './llm.js';
 import { ideologyLabel } from '../data/ideologies.js';
 import { STAT_BY_ID } from '../data/stats.js';
 
@@ -57,9 +60,9 @@ function templateComment(state, rnd, sp, a, post) {
 }
 
 // ---- journalistens följdfråga ----
-export async function followUp(state, rnd, { question, answer, analysis, journalist, issue, kind }) {
+export async function followUp(state, rnd, { question, answer, analysis, journalist, issue, kind, history = [] }) {
   const p = me(state); const l = state.people[p.leader];
-  if (llmEnabled()) { try { const r = await llmReplies({ situation: `${kind === 'podd' ? 'Ett poddsamtal' : 'En TV-utfrågning'}. Programledaren frågade: "${question}". ${analysis.answers < .4 ? 'Svaret besvarade egentligen inte frågan.' : ''} ${analysis.claims?.some((c) => c.ok === false) ? 'Svaret innehöll en felaktig siffra.' : ''} ${analysis.contradiction ? 'Svaret motsäger tidigare uttalanden: ' + analysis.contradiction : ''}`, playerText: answer, playerName: l.name, abbr: p.abbr, speakers: [{ who: journalist?.name || 'Programledaren', desc: `${kind === 'podd' ? 'avslappnad poddvärd' : journalist?.style === 'skarp' ? 'skarp, påläst politisk journalist' : journalist?.style === 'provocerande' ? 'provocerande kvällstidningsjournalist' : 'lugn public service-journalist'}; ställer EN följdfråga eller konstaterar något och går vidare` }], count: 1 }); return r[0]?.text; } catch (e) { console.warn('LLM', e.message); } }
+  if (llmEnabled()) { try { const r = await llmReplies({ situation: `${kind === 'podd' ? 'Ett poddsamtal' : 'En TV-utfrågning'}. Programledaren frågade: "${question}". ${analysis.answers < .4 ? 'Svaret besvarade egentligen inte frågan.' : ''} ${analysis.claims?.some((c) => c.ok === false) ? 'Svaret innehöll en felaktig siffra.' : ''} ${analysis.contradiction ? 'Svaret motsäger tidigare uttalanden: ' + analysis.contradiction : ''}`, playerText: answer, playerName: l.name, abbr: p.abbr, history, speakers: [{ who: journalist?.name || 'Programledaren', desc: `${kind === 'podd' ? 'avslappnad poddvärd' : journalist?.style === 'skarp' ? 'skarp, påläst politisk journalist' : journalist?.style === 'provocerande' ? 'provocerande kvällstidningsjournalist' : 'lugn public service-journalist'}; ställer EN följdfråga eller konstaterar något och går vidare` }], count: 1 }); return r[0]?.text; } catch (e) { console.warn('LLM', e.message); } }
   if (analysis.answers < .35) return pick(rnd, ['Fast det där svarade egentligen inte på frågan. Hur?', 'Jag frågade igen: hur ska det gå till?', 'Det var ett långt svar utan att svara. Siffror, tack.']);
   if (analysis.claims?.some((c) => c.ok === false)) { const c = analysis.claims.find((x) => x.ok === false); return `Nu sa du ${fmt(c.value)} – men den faktiska siffran är ${fmt(c.actual, STAT_BY_ID[c.stat]?.d ?? 1)}. Har du fel underlag?`; }
   if (analysis.promises?.length) return pick(rnd, ['Det är ett nytt löfte. Vad kostar det, och när är det på plats?', 'Ni lovar alltså det här inför valet. Vi noterar det.', 'Och om ni inte lyckas – avgår du då?']);
@@ -69,10 +72,10 @@ export async function followUp(state, rnd, { question, answer, analysis, journal
 }
 
 // ---- motståndarens svar i en debatt ----
-export async function opponentReply(state, rnd, { opponentParty, opponent, playerText, analysis, issue, statement, mood = null, moodRaw = null }) {
+export async function opponentReply(state, rnd, { opponentParty, opponent, playerText, analysis, issue, statement, mood = null, moodRaw = null, history = [] }) {
   const p = me(state); const l = state.people[p.leader];
   const is = ISSUE_BY_ID[issue];
-  if (llmEnabled()) { try { const m = mood ? `${opponent.first || opponent.name} är just nu ${mood.label} (${mood.emoji}, ilska ${Math.round(moodRaw?.anger || 0)}, glädje ${Math.round(moodRaw?.joy || 0)}, nedstämdhet ${Math.round(moodRaw?.sad || 0)}, nervositet ${Math.round(moodRaw?.fear || 0)} av 100) – låt det färga repliken tydligt.` : ''; const r = await llmReplies({ situation: `TV-debatt om ${is?.name.toLowerCase()}. ${opponent.name} (${opponentParty.abbr}, ${ideologyLabel(opponentParty.ideology?.primary, opponentParty.ideology?.secondary)}) sa nyss: "${statement}". Partiledaren svarade. ${analysis.contradiction ? 'Svaret motsäger partiledarens tidigare linje: ' + analysis.contradiction : ''} ${analysis.claims?.some((c) => c.ok === false) ? 'Svaret innehöll en felaktig siffra som motståndaren kan påpeka.' : ''} ${m}`, playerText, playerName: l.name, abbr: p.abbr, speakers: [{ who: opponent.name, desc: `partiledare för ${opponentParty.name}; ${opponent.persona?.personality?.join(', ') || 'rutinerad'}; svarar skarpt men politiskt, max 3 meningar, kan ställa en motfråga${mood?.level >= 3 ? '; är så upprörd/berörd att det syns' : ''}` }], count: 1 }); return r[0]?.text; } catch (e) { console.warn('LLM', e.message); } }
+  if (llmEnabled()) { try { const m = mood ? `${opponent.first || opponent.name} är just nu ${mood.label} (${mood.emoji}, ilska ${Math.round(moodRaw?.anger || 0)}, glädje ${Math.round(moodRaw?.joy || 0)}, nedstämdhet ${Math.round(moodRaw?.sad || 0)}, nervositet ${Math.round(moodRaw?.fear || 0)} av 100) – låt det färga repliken tydligt.` : ''; const r = await llmReplies({ situation: `TV-debatt om ${is?.name.toLowerCase()}. ${opponent.name} (${opponentParty.abbr}, ${ideologyLabel(opponentParty.ideology?.primary, opponentParty.ideology?.secondary)}) sa nyss: "${statement}". Partiledaren svarade. ${analysis.contradiction ? 'Svaret motsäger partiledarens tidigare linje: ' + analysis.contradiction : ''} ${analysis.claims?.some((c) => c.ok === false) ? 'Svaret innehöll en felaktig siffra som motståndaren kan påpeka.' : ''} ${m}`, playerText, playerName: l.name, abbr: p.abbr, history, speakers: [{ who: opponent.name, desc: `partiledare för ${opponentParty.name}; ${opponent.persona?.personality?.join(', ') || 'rutinerad'}; svarar skarpt men politiskt, max 3 meningar, kan ställa en motfråga${mood?.level >= 3 ? '; är så upprörd/berörd att det syns' : ''}` }], count: 1 }); return r[0]?.text; } catch (e) { console.warn('LLM', e.message); } }
   if (analysis.claims?.some((c) => c.ok === false)) { const c = analysis.claims.find((x) => x.ok === false); return `Nej. ${STAT_BY_ID[c.stat]?.name || 'Siffran'} är ${fmt(c.actual, STAT_BY_ID[c.stat]?.d ?? 1)}, inte ${fmt(c.value)}. Om ni inte ens kan siffrorna, hur ska ni styra landet?`; }
   if (analysis.contradictions?.length || analysis.contradiction) return pick(rnd, ['Det där är inte vad ni sa för ett år sedan. Vilken linje gäller egentligen?', 'Ni byter fot i den här frågan varje gång det blåser.', 'Väljarna hör att ni säger en sak i dag och en annan i morgon.']);
   if (analysis.dominant === 'aggressiv') return pick(rnd, ['Jag tänker inte sänka mig till den nivån.', 'Personangrepp är det enda ni har när argumenten tar slut.', `Lågt, ${l.first}. Riktigt lågt.`]);
@@ -107,13 +110,37 @@ export async function negotiationReply(state, rnd, { party, playerText, analysis
 }
 
 // ---- analys med Claude om det är påslaget, annars regelbaserad ----
-export async function analyze(state, text, { question = null, questionIssue = null, opponentPartyId = null, counterpart = null } = {}) {
+export async function analyze(state, text, { question = null, questionIssue = null, opponentPartyId = null, counterpart = null, kind = null } = {}) {
   const p = me(state); const l = state.people[p.leader];
   const ctx = { stats: state.sweden.stats, parties: Object.values(state.parties).filter((q) => q.active !== false && !q.isPlayer), people: Object.values(state.people).filter((x) => x.role === 'leader' || x.role === 'minister').slice(0, 40), question, questionIssue, opponentPartyId };
   // smart analys på enheten: semantiska träffar mening för mening (om spelaren slagit på det och modellen är laddad)
   if (smartEnabled()) { try { if (!smartReady()) loadSmart().catch(() => {}); else ctx.extraHits = await embedHits(splitSentences(text)); } catch (e) { console.warn('smart analys', e.message); } }
   const base = analyzeText(text, ctx);
-  if (!llmEnabled()) return base;
+  if (localReady()) {
+    // spelets egen språkmodell: förstår fri text, ironi, berättelser; siffror, löften och faktakoll tar den inbyggda analysen
+    try {
+      const parties = ctx.parties;
+      const { messages, schema } = analysisMessages({ text, question, kind: kind || (question ? 'svar på en fråga' : 'uttalande'), counterpart, parties: parties.map((q) => q.abbr) });
+      const r = fromLocalAnalysis(await localJSON(messages, schema, { max: 260, temp: .15, penalty: .3 }), parties);
+      const merged = { ...base, llm: 'local', summary: r.summary || base.summary, dominant: r.dominant, intensity: Math.max(base.intensity * .6, r.intensity), dryg: Math.max(base.dryg * .6, r.dryg) };
+      merged.tone = { ...Object.fromEntries(Object.keys(base.tone).map((k) => [k, base.tone[k] * .4])), [r.dominant]: Math.max(base.tone[r.dominant] || 0, .6) };
+      merged.emotion = Object.fromEntries(Object.keys(base.emotion).map((k) => [k, clamp(Math.max(r.emotion[k] || 0, (base.emotion[k] || 0) * .6), 0, 1)]));
+      // ämnen: modellens ämnen först, den inbyggda analysens som komplement
+      merged.issues = { ...Object.fromEntries(Object.entries(base.issues).map(([k, v]) => [k, v * .5])) };
+      for (const id of r.topics) merged.issues[id] = Math.max(merged.issues[id] || 0, 1.5);
+      merged.topics = Object.entries(merged.issues).filter(([, v]) => v >= .75).sort((a, b) => b[1] - a[1]).map(([id]) => id);
+      merged.stance = { ...base.stance, ...r.stance };
+      if (r.answers != null && question) merged.answers = clamp(r.answers * .75 + base.answers * .25, 0, 1);
+      merged.attacks = [...new Set([...r.attacks, ...base.attacks])];
+      for (const t of r.promisesText) if (!merged.promises.some((pr) => pr.text.toLowerCase().includes(t.toLowerCase().slice(0, 12)))) merged.promises.push({ text: t, number: null, unit: null, issue: merged.topics[0] || null, soft: true });
+      merged.vague = !merged.topics.length && !merged.promises.length && !merged.claims.length;
+      merged.clarity = clamp(Math.max(base.clarity, merged.topics.length ? .45 : .2) + (merged.promises.length ? .1 : 0) - (r.dominant === 'undvikande' ? .25 : 0), 0, 1);
+      merged.keywords = merged.topics.slice(0, 3).map((id) => ISSUE_BY_ID[id]?.short.toLowerCase()).filter(Boolean);
+      merged.risky = Math.round(clamp(base.risky * .4 + merged.emotion.insult * 35 + merged.emotion.mock * 15 + merged.emotion.threat * 40 + merged.intensity * 15 + (r.dominant === 'aggressiv' ? 20 : r.dominant === 'dryg' ? 15 : r.dominant === 'humor' ? 10 : 0) + (merged.attacks.length ? 10 : 0), 0, 100));
+      return merged;
+    } catch (e) { console.warn('lokal analys misslyckades, använder inbyggd', e.message); return base; }
+  }
+  if (!claudeOn()) return base;
   try {
     const hist = (state.memory?.statements || []).slice(-8).map((s) => `v${s.week} (${s.kind}): "${s.text.slice(0, 120)}"`).join('\n');
     const r = await llmAnalyze(text, { partyName: p.name, abbr: p.abbr, ideology: ideologyLabel(p.ideology?.primary, p.ideology?.secondary), issueList: ISSUES.map((i) => `${i.id}: ${i.name} (−100 ${i.left} … +100 ${i.right})`).join('; '), partyList: Object.values(state.parties).filter((q) => q.active !== false).map((q) => `${q.id}: ${q.name}`).join(', '), statList: ['arbetsloshet', 'inflation', 'bnp_tillvaxt', 'statsskuld_bnp', 'skjutningar', 'vardkoer', 'elpris', 'asylsokande', 'utslapp', 'poliser', 'styrranta', 'medianlon', 'byggstarter', 'dodligt_vald'].map((id) => `${id}=${fmt(state.sweden.stats[id], STAT_BY_ID[id].d)} ${STAT_BY_ID[id].unit}`).join(', '), question, history: hist, counterpart });

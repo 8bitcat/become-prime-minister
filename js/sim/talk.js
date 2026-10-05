@@ -11,6 +11,8 @@ import { pickJournalist, adjustJournalist } from './media.js';
 import { recordStatement, factCheck, personaLabel } from '../ai/memory.js';
 import { toneLabel } from '../ai/analyze.js';
 import { llmEnabled, llmReplies } from '../ai/llm.js';
+import { localReady, localJSON } from '../ai/local.js';
+import { dealMessages } from '../ai/prompts.js';
 import { MINISTRIES } from './government.js';
 import { activeParties } from './opinion.js';
 
@@ -156,6 +158,16 @@ export async function negotiationCounter(state, rnd, q, item, demand, text, a) {
   const t = text.toLowerCase();
   const rel = q.relations[p.id] || 0; const soc = (l.traits.social - 45) / 100;
   recordStatement(state, text, 'negotiation', { audience: 'private', analysis: a });
+  // spelets AI: motparten läser budet och bestämmer själv
+  if (localReady()) {
+    try {
+      const { messages, schema } = dealMessages({ who: ql.name, party: q.name, demand: demand.text, offer: text, relation: rel > 30 ? 'god, ni litar på varandra' : rel < -30 ? 'dålig, ni misstror varandra' : 'sval' });
+      const r = await localJSON(messages, schema, { max: 160, temp: .5 });
+      const decision = r.beslut === 'ja' ? 'accept' : r.beslut === 'motbud' ? (rnd() < .55 + rel / 250 + soc * .3 ? 'counter' : 'reject') : 'reject';
+      q.relations[p.id] = clamp(rel + (decision === 'reject' ? (a.dominant === 'aggressiv' ? -8 : -2) : 2), -100, 100);
+      if (r.replik) return { decision, reply: String(r.replik).trim() };
+    } catch (e) { console.warn('förhandling AI', e.message); }
+  }
   let decision;
   if (a.dominant === 'aggressiv') decision = 'reject';
   else if (/accepter|går med på|vi säger ja|okej, |det kan vi|vi ställer upp|deal|överens/.test(t) || overlap(text, demand.text) >= 2) decision = 'accept';

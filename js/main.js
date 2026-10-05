@@ -7,6 +7,11 @@ import { newGame } from './sim/newgame.js';
 import { toast } from './ui/modal.js';
 import { migrate } from './sim/migrate.js';
 import { loadSprites } from './art/sprites.js';
+import { offerLocalAi, autoStartLocalAi } from './ui/freetext.js';
+import * as localAi from './ai/local.js';
+import { installNewsroom } from './ai/newsroom.js';
+window.BPM_AI = localAi; // för tester och felsökning
+installNewsroom();
 
 function showStart() { G.state = null; renderStart({ onNew: showSetup, onLoad: startSlot }); }
 function showSetup() { renderSetup({ onDone: (def) => { const { state, rnd } = newGame(def); G.state = state; G.rnd = rnd; G.slot = def.slot; save(); enterGame(); }, onCancel: showStart }); }
@@ -16,6 +21,8 @@ async function enterGame() {
   UI.page = 'oversikt';
   UI.render();
   if (G.state.queue?.length) { UI.busy = true; UI.render(); await processQueue(); UI.busy = false; UI.render(); }
+  // första gången: erbjud spelets egen AI (inte i automatiska tester)
+  if (!params.has('noai') && !navigator.webdriver) offerLocalAi().catch(() => {});
 }
 
 // För tester: window.BPM ger åtkomst till tillståndet
@@ -25,5 +32,7 @@ const params = new URLSearchParams(location.search);
 const saves = listSaves();
 // Rollgalleriet (tecknade figurer) laddas först – SVG-dockan är reserv om det saknas
 await loadSprites();
+// Spelets AI startar av sig själv om spelaren har slagit på den tidigare (snabbt när modellen redan är sparad)
+if (!params.has('noai')) autoStartLocalAi();
 if (params.get('slot') && !saves[+params.get('slot') - 1]?.empty) startSlot(+params.get('slot'));
 else showStart();

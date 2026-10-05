@@ -177,6 +177,37 @@ const mm = monthlyMinisters(state, rnd); ok(Array.isArray(mm), 'ministrar: måna
 // --- v0.5: följare växer med opinionen, personligheten formas av beteendet ---
 { const { driftTraits } = await import('../js/sim/drift.js'); for (let i = 0; i < 12; i++) recordStatement(state, 'Ni ljuger och sviker Sverige! Skäms! Katastrof! Idioter!', 'post'); const before = l.traits.aggressivitet; const line = driftTraits(state, rnd); ok(l.traits.aggressivitet > before && typeof line === 'string', `drift: ofta aggressiv → aggressivitet ${before.toFixed(1)} → ${l.traits.aggressivitet.toFixed(1)}`); for (let i = 0; i < 12; i++) recordStatement(state, 'Som alla begriper förstår du inte det här, lilla vän. Läs på innan du uttalar dig.', 'post'); const kar = l.traits.karisma; driftTraits(state, rnd); ok(l.traits.karisma < kar, `drift: ofta dryg → karisma ${kar.toFixed(1)} → ${l.traits.karisma.toFixed(1)}`); }
 { const { weeklySocial } = await import('../js/sim/social.js'); const f0 = state.social.followers[l.id].x; state.opinion.support[me.id] = 12; state.opinion.awareness[me.id] = 1; for (let i = 0; i < 20; i++) weeklySocial(state, rnd); ok(state.social.followers[l.id].x > f0 * 3, `följare: växer med opinionen (${f0} → ${state.social.followers[l.id].x})`); }
+// --- v0.6: staben, politik med egna ord, kalendern, spelets AI (utan modell) ---
+{
+  const { gameBrief, fallbackAdvice, ensureAdvisors } = await import('../js/ai/brief.js');
+  ensureAdvisors(state, rnd); const brief = gameBrief(state);
+  ok(brief.includes(me.abbr) && brief.split('\n').length >= 10, `lägesbild: ${brief.split('\n').length} rader om läget`);
+  const adv = fallbackAdvice(state, 'stab', 'Hur klarar vi spärren inför valet?', analyzeText('Hur klarar vi spärren inför valet?', ctx));
+  ok(/spärren|%/.test(adv), 'staben: svar utan språkmodell bygger på läget');
+  const { mapPolicyText, heuristicPolicyMap } = await import('../js/ai/policymap.js');
+  const m1 = heuristicPolicyMap('Sänk bensinskatten. Höj skatten för de rikaste.', {});
+  ok(m1.some((c) => c.id === 'skatt_bensin' && c.to < c.from) && m1.some((c) => c.id === 'skatt_statlig' && c.to > c.from), `politik med egna ord: ${m1.map((c) => c.id).join(', ')}`);
+  const m2 = await mapPolicyText('Vi vill stänga gränsen och bygga ny kärnkraft.', {});
+  ok(m2.via === 'regler' && m2.changes.length >= 2, `politik med egna ord utan AI: ${m2.changes.map((c) => c.id).join(', ')}`);
+  const { calendarWeek, fragestundQuestion, fragestundOutcome, SPEECH_EVENTS, eventSpeechOutcome } = await import('../js/sim/calendar.js');
+  const { speechReactions } = await import('../js/ai/generate.js');
+  const saveDate = { ...state.date }; state.date = { y: saveDate.y, m: 7, d: 1 };
+  const items = calendarWeek(state, rnd, { y: saveDate.y, m: 6, d: 24 }, { items: [] });
+  ok(items.some((x) => x.type === 'speechEvent' && x.event === 'almedalen'), 'kalendern: Almedalen i slutet av juni');
+  state.date = saveDate;
+  const t = 'Kära Almedalen! Sverige förtjänar bättre. Vi lovar 5 000 fler sjuksköterskor.'; const aa = analyzeText(t, ctx);
+  const so2 = eventSpeechOutcome(state, rnd, 'almedalen', t, speechReactions(state, rnd, t, aa, null), aa);
+  ok(Number.isFinite(so2.score), `kalendern: Almedalstal ger utfall (${so2.score.toFixed(0)})`);
+  const fq = fragestundQuestion(state, rnd); ok(fq.question && fq.asker, `frågestund: "${fq.question.slice(0, 50)}…"`);
+  const fo = fragestundOutcome(state, rnd, fq, 'Vi har anställt 3 000 poliser.', analyzeText('Vi har anställt 3 000 poliser.', { ...ctx, question: fq.question }), false); ok(Number.isFinite(fo.delta), 'frågestund: utfall');
+  const { localReady, localSettings } = await import('../js/ai/local.js');
+  const { llmEnabled } = await import('../js/ai/llm.js');
+  ok(!localReady() && !llmEnabled() && localSettings().enabled === false, 'spelets AI är av utan WebGPU och ingen nyckel används');
+  const { analysisMessages, fromLocalAnalysis, POLES } = await import('../js/ai/prompts.js');
+  const am = analysisMessages({ text: 'test', parties: ['S', 'M'] }); ok(am.schema.properties.vill.items.enum.length === POLES.length, 'prompter: svarsformat med slutna alternativ');
+  const fl = fromLocalAnalysis({ sammanfattning: 'x', amnen: ['valfard'], vill: ['ekonomi: högre skatt, större offentlig sektor'], ton: 'kansla', forolampar: 'nej', hanar: 'nej', berommer: 'tydligt', hotar: 'nej', empati: 'lite', medger: 'nej', upprord: 'nej', svarar: 'ja', angriper: ['S'], lofte: ['fler sjuksköterskor'] }, [{ id: 's', abbr: 'S' }]);
+  ok(fl.stance.ekonomi === -1 && fl.topics.includes('valfard') && fl.emotion.praise === 1 && fl.attacks[0] === 's', 'prompter: modellens svar översätts rätt');
+}
 // --- några veckor med allt på ---
 let errors = 0;
 for (let w = 0; w < 30; w++) { try { endWeek(state, rnd); state.queue.length = 0; } catch (e) { errors++; console.error(e.stack); break; } }

@@ -9,15 +9,17 @@ import { MEDIA } from '../data/names.js';
 import { PLATFORMS, FORMATS, composeFreePost, deletePost, replyToComment } from '../sim/social.js';
 import { analyze, commentsFor, speechReactions } from '../ai/generate.js';
 import { recordStatement, factCheck, correctClaim, statementKindLabel } from '../ai/memory.js';
-import { toneLabel } from '../ai/analyze.js';
+import { toneLabel, analyzeText } from '../ai/analyze.js';
 import { adviserLine } from '../scene/debate.js';
 import { pressQuestions, pressAnswer, pressSummary, speechOutcome, privateTalk, focusGroup } from '../sim/talk.js';
-import { llmSettings, saveLlmSettings, MODELS, llmPing, resetClient, llmEnabled } from '../ai/llm.js';
+import { llmSettings, saveLlmSettings, MODELS, llmPing, resetClient, llmEnabled, llmReplies } from '../ai/llm.js';
 import { loadSmart, smartStatus } from '../ai/embed.js';
+import { LOCAL_MODELS, localSettings, saveLocalSettings, localStatus, onLocalStatus, loadLocal, unloadLocal, probeDevice, localModelInfo } from '../ai/local.js';
 import { characterArt } from '../art/sprites.js';
 import { activeParties } from '../sim/opinion.js';
 import { MINISTRIES } from '../sim/government.js';
 import { addNews } from '../sim/news.js';
+import { SPEECH_EVENTS, eventSpeechOutcome, fragestundQuestion, fragestundOutcome, askPmOutcome } from '../sim/calendar.js';
 
 const me = () => G.state.parties[G.state.player.partyId];
 const leader = () => G.state.people[me().leader];
@@ -221,18 +223,99 @@ export async function statementDialog(item, ui) {
 
 // ---------- AI-INSTÄLLNINGAR ----------
 export function aiSettingsDialog() {
-  const st = llmSettings();
+  const st = llmSettings(); const ls = localSettings();
   const body = h('div', {});
-  body.innerHTML = `<p class="help">Spelet läser det du skriver med en inbyggd, regelbaserad analys som fungerar utan nätverk. Lägger du in en egen Anthropic-nyckel analyserar <b>Claude</b> dina texter i stället och skriver repliker åt journalister, motståndare och väljare – betydligt vassare. Nyckeln sparas bara i din webbläsare och anropen går direkt till Anthropic från din dator; du betalar själv för användningen (några ören per replik).</p>
-    <div class="field"><label><input type="checkbox" id="en" ${st.enabled ? 'checked' : ''}> Använd Claude</label></div>
-    <div class="field"><label>API-nyckel</label><input type="password" id="key" value="${esc(st.key || '')}" placeholder="sk-ant-…"></div>
-    <div class="field"><label>Modell</label><select id="model">${MODELS.map((m) => `<option value="${m.id}" ${st.model === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>
-    <div id="res" class="help"></div>
-    <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
-    <p class="help"><b>Smart analys på enheten</b> – utan nyckel och utan kostnad: en liten språkmodell (multilingual-e5-small, ~118 MB, laddas en gång och cachas av webbläsaren) körs lokalt och förstår fria formuleringar betydligt bättre än den inbyggda matchningen. Fungerar på dator och nyare mobiler.</p>
-    <div class="field"><label><input type="checkbox" id="smart" ${st.smart ? 'checked' : ''}> Använd smart analys på enheten</label></div>
-    <div id="smartRes" class="help">${smartStatus().state === 'klar' ? '<span class="ok">Modellen är laddad.</span>' : smartStatus().state === 'laddar' ? `Laddar… ${smartStatus().progress || 0} %` : ''}</div>`;
-  const readIn = () => ({ enabled: body.querySelector('#en').checked, key: body.querySelector('#key').value.trim(), model: body.querySelector('#model').value, smart: body.querySelector('#smart').checked });
-  body.querySelector('#smart').addEventListener('change', (e) => { if (!e.target.checked) return; saveLlmSettings({ ...llmSettings(), ...readIn() }); const res = body.querySelector('#smartRes'); loadSmart((s) => { res.innerHTML = s.state === 'klar' ? '<span class="ok">Modellen är laddad – smart analys används.</span>' : s.state === 'fel' ? `<span class="danger">Kunde inte ladda: ${esc(s.error || '')}</span>` : `Laddar… ${s.progress || 0} %${s.file ? ' (' + esc(s.file) + ')' : ''}`; }).catch(() => {}); });
-  modal({ title: '🤖 AI-läge (Claude)', body, buttons: [{ label: 'Testa nyckeln', close: false, onClick: async (btn) => { saveLlmSettings({ ...readIn(), enabled: true }); resetClient(); btn.disabled = true; body.querySelector('#res').textContent = 'Testar…'; try { await llmPing(); body.querySelector('#res').innerHTML = '<span class="ok">Fungerar!</span>'; } catch (e) { body.querySelector('#res').innerHTML = `<span class="danger">Misslyckades: ${esc(e.message)}</span>`; } btn.disabled = false; return false; } }, { label: 'Spara', cls: 'gold', onClick: () => { saveLlmSettings(readIn()); resetClient(); toast(readIn().enabled && readIn().key ? 'Claude-läget är på.' : 'Inbyggd analys används.'); } }] });
+  body.innerHTML = `<p class="help"><b>Spelets AI</b> är en språkmodell som körs helt på din egen dator, i webbläsaren. Den förstår allt du skriver och låter motståndare, journalister, väljare och din stab svara med egna ord. Ingen nyckel, ingen kostnad, inget skickas någonstans. Modellen laddas ned en gång och sparas sedan i webbläsaren. Den kräver WebGPU (Chrome, Edge eller Safari 26) och fungerar bäst med ett eget grafikkort.</p>
+    <div id="dev" class="help">Kontrollerar din dator …</div>
+    <div class="pick" id="models" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:10px;gap:8px"><button class="btn gold" id="loadAi">Starta spelets AI</button><button class="btn" id="stopAi">Stäng av</button></div>
+    <div id="aiRes" class="help" style="margin-top:6px"></div>
+    <div class="meterline" id="aiBarWrap" style="display:none"><span>Laddar</span><div class="bar"><i id="aiBar" style="width:0%"></i></div><b id="aiPct">0 %</b></div>
+    <details style="margin-top:14px"><summary class="muted" style="cursor:pointer">Avancerat: Claude med egen nyckel (valfritt – kostar pengar, används aldrig utan att du slår på det)</summary>
+      <p class="help" style="margin-top:8px">Om du själv vill kan du låta Claude ta över när spelets AI inte är igång. Nyckeln sparas bara i din webbläsare och du betalar själv för varje anrop. Spelets egen AI används alltid i första hand.</p>
+      <div class="field"><label><input type="checkbox" id="en" ${st.enabled ? 'checked' : ''}> Använd Claude när spelets AI inte är igång</label></div>
+      <div class="field"><label>API-nyckel</label><input type="password" id="key" value="${esc(st.key || '')}" placeholder="sk-ant-…"></div>
+      <div class="field"><label>Modell</label><select id="model">${MODELS.map((m) => `<option value="${m.id}" ${st.model === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>
+      <button class="btn sm" id="testKey">Testa nyckeln</button> <span id="res" class="help"></span>
+    </details>`;
+  let chosen = ls.model || null;
+  const models = body.querySelector('#models');
+  const drawModels = (rec) => { models.innerHTML = ''; for (const m of LOCAL_MODELS) { const o = h('div', { class: 'opt ' + ((chosen || rec) === m.id ? 'on' : '') }); o.innerHTML = `<b>${esc(m.name)}${m.id === rec ? ' · rekommenderas' : ''}</b><small>${esc(m.size)} · ${esc(m.desc)}</small>`; o.addEventListener('click', () => { chosen = m.id; drawModels(rec); }); models.append(o); } };
+  const res = body.querySelector('#aiRes'); const barW = body.querySelector('#aiBarWrap'); const bar = body.querySelector('#aiBar'); const pct = body.querySelector('#aiPct');
+  const show = (s) => { if (s.state === 'laddar') { barW.style.display = ''; bar.style.width = s.progress + '%'; pct.textContent = s.progress + ' %'; res.textContent = s.text || ''; } else if (s.state === 'klar') { barW.style.display = 'none'; res.innerHTML = `<span class="ok">Spelets AI är igång (${esc(localModelInfo()?.name || s.model)}).</span>`; } else if (s.state === 'fel') { barW.style.display = 'none'; res.innerHTML = `<span class="danger">Kunde inte starta: ${esc(s.text)}</span>`; } else { barW.style.display = 'none'; res.textContent = 'Spelets AI är avstängd – den inbyggda analysen används.'; } };
+  show(localStatus());
+  const off = onLocalStatus(show);
+  probeDevice().then((d) => { body.querySelector('#dev').innerHTML = d.ok ? `Grafikkort: <b>${esc([d.vendor, d.arch].filter(Boolean).join(' ') || 'okänt')}</b>${d.mobile ? ' (mobil)' : ''} – fungerar.` : `<span class="danger">${esc(d.reason || 'WebGPU saknas')}</span> Spelet fungerar ändå, med den inbyggda analysen.`; drawModels(d.recommended || LOCAL_MODELS[1].id); if (!chosen) chosen = d.recommended; body.querySelector('#loadAi').disabled = !d.ok; });
+  body.querySelector('#loadAi').addEventListener('click', () => { const id = chosen || LOCAL_MODELS[0].id; saveLocalSettings({ enabled: true, model: id, asked: true }); loadLocal(id).catch(() => {}); });
+  body.querySelector('#stopAi').addEventListener('click', () => { saveLocalSettings({ enabled: false }); unloadLocal(); });
+  const readIn = () => ({ ...llmSettings(), enabled: body.querySelector('#en').checked, key: body.querySelector('#key').value.trim(), model: body.querySelector('#model').value });
+  body.querySelector('#testKey').addEventListener('click', async (e) => { const btn = e.target; saveLlmSettings({ ...readIn(), enabled: true }); resetClient(); btn.disabled = true; body.querySelector('#res').textContent = 'Testar…'; try { await llmPing(); body.querySelector('#res').innerHTML = '<span class="ok">Fungerar!</span>'; } catch (err) { body.querySelector('#res').innerHTML = `<span class="danger">Misslyckades: ${esc(err.message)}</span>`; } saveLlmSettings(readIn()); btn.disabled = false; });
+  modal({ title: '🧠 Spelets AI', body, wide: true, onClose: off, buttons: [{ label: 'Klar', cls: 'gold', onClick: () => { saveLlmSettings(readIn()); resetClient(); off(); } }] });
+}
+// Första gången: erbjud att starta spelets AI (bara om datorn klarar det)
+export async function offerLocalAi() {
+  const ls = localSettings(); if (ls.asked || localStatus().state !== 'av') return;
+  const d = await probeDevice(); if (!d.ok) { saveLocalSettings({ asked: true }); return; }
+  const rec = LOCAL_MODELS.find((m) => m.id === d.recommended) || LOCAL_MODELS[1];
+  const i = await choice({ title: '🧠 Starta spelets AI?', text: `<p>Spelet har en egen språkmodell som körs på din dator. Med den förstår spelet allt du skriver, och motståndare, journalister, väljare och din stab svarar med egna ord – som ett riktigt samtal. Ingen nyckel och ingen kostnad.</p><p>Din dator klarar <b>${esc(rec.name)}</b>. Den laddas ned en gång (${esc(rec.size)}) och sparas i webbläsaren. Du kan spela medan den laddas.</p>`, choices: [{ label: `Ja, starta spelets AI (${rec.size})`, cls: 'gold', desc: 'Rekommenderas' }, { label: 'Välj storlek själv …', desc: 'Öppnar inställningarna' }, { label: 'Inte nu', desc: 'Kan slås på senare under ☰ Meny → Spelets AI' }] });
+  saveLocalSettings({ asked: true });
+  if (i === 0) { saveLocalSettings({ enabled: true, model: rec.id }); loadLocal(rec.id).catch(() => {}); toast('Spelets AI laddas i bakgrunden – du kan spela under tiden.', 'good'); }
+  else if (i === 1) aiSettingsDialog();
+}
+// Starta automatiskt om spelaren har slagit på den tidigare (går fort när modellen redan är sparad)
+export function autoStartLocalAi() { const ls = localSettings(); if (ls.enabled && ls.model && localStatus().state === 'av') loadLocal(ls.model).catch(() => {}); }
+
+
+// ---------- KALENDERN: tal i Sälen, Järva, Almedalen – och regeringsförklaringen ----------
+export async function speechEventFlow(item) {
+  const s = G.state; const ev = SPEECH_EVENTS[item.event]; if (!ev) return;
+  const l = leader();
+  const i = await choice({ title: `📅 ${ev.title}`, text: `<p>${esc(ev.intro)}</p>`, choices: [{ label: item.event === 'regeringsforklaring' ? 'Skriv regeringsförklaringen' : 'Skriv och håll talet', cls: 'gold', desc: 'Kostar inga handlingspoäng' }, ...(item.event === 'regeringsforklaring' ? [] : [{ label: 'Avstå', desc: 'Någon annan får ta utrymmet.' }])] });
+  if (i !== 0) { addNews(s, { outlet: 'svt', headline: `${l.name} avstod från att tala på ${ev.title}`, body: 'Kritiker undrar om partiledaren har något att säga.', tags: ['politik'], partyId: me().id, importance: 1, tone: -1 }); save(); return; }
+  const r = await textDialog({ title: `${ev.title} – ditt tal`, intro: `${esc(ev.intro)} Publiken reagerar mening för mening.`, placeholder: ev.ph, rows: 10, maxlength: 3000, ctx: ctxFor(), okLabel: 'Håll talet', closable: false, cancelLabel: 'Avstå ändå' });
+  if (!r) return;
+  busyToast();
+  const an = await analyze(s, r.text, { kind: ev.title });
+  const reactions = speechReactions(s, G.rnd, r.text, an, null);
+  await new Promise((res) => {
+    const body = h('div', {}); body.innerHTML = `<div class="speech" id="sp"></div><div class="meterline"><span>Publiken</span><div class="bar"><i id="smeter" style="width:50%"></i></div><b id="sval">0</b></div>`;
+    const m = modal({ title: ev.title, body, wide: true, closable: false, buttons: [{ label: 'Fortsätt', cls: 'gold', onClick: res, disabled: true }] });
+    const sp = body.querySelector('#sp'); let acc = 0; let k = 0;
+    const step = () => { if (k >= reactions.lines.length) { m.el.querySelector('.mf .btn').disabled = false; return; } const ln = reactions.lines[k++]; acc += ln.v; sp.insertAdjacentHTML('beforeend', `<div class="line ${ln.v > 1 ? 'good' : ln.v < -.5 ? 'bad' : ''}"><div>${esc(ln.s)}</div><small>${ln.v > 1 ? '👏' : ln.v < -.5 ? '😐' : '…'} ${esc(ln.react)}</small></div>`); sp.scrollTop = sp.scrollHeight; const v = clamp(acc * 4, -50, 50); body.querySelector('#smeter').style.width = `${50 + v}%`; body.querySelector('#sval').textContent = fmt(acc, 1); setTimeout(step, 600); };
+    step();
+  });
+  const out = eventSpeechOutcome(s, G.rnd, item.event, r.text, reactions, an);
+  save();
+  await info(out.score > 18 ? '🔥 Talet gick hem' : out.score < -12 ? '😬 Talet föll platt' : 'Talet är hållet', `<p>Publikens betyg: <b>${fmt(out.score, 0)}</b> (−60…60).${an.summary ? ` Medierna sammanfattar: <i>"${esc(an.summary)}"</i>` : ''}</p>${out.contradictions.length ? `<p class="danger">${esc(out.contradictions[0])}</p>` : ''}`);
+}
+// Frågestunden: oppositionen frågar dig som statsminister
+export async function fragestundDialog() {
+  const s = G.state; const fq = fragestundQuestion(s, G.rnd);
+  const asker = s.people[fq.askerId];
+  const av = h('div', { class: 'minister' }); av.innerHTML = `<div class="av">${asker ? characterArt(asker, { crop: 'face', id: 'fq' }) : '🙋'}</div><div><b>${esc(fq.asker)} (${esc(fq.abbr)})</b><br><span style="font-size:15px">"${esc(fq.question)}"</span></div>`;
+  const r = await textDialog({ title: '🏛️ Frågestund i riksdagen', intro: 'Talmannen ger ordet till statsministern.', before: av, placeholder: 'Herr talman! …', rows: 4, maxlength: 900, ctx: ctxFor(fq.question, fq.issue), okLabel: 'Svara', cancelLabel: 'Svara undvikande', closable: false });
+  const noComment = !r;
+  const text = r?.text || 'Jag tackar för frågan. Regeringen arbetar med frågan och återkommer.';
+  if (!noComment) busyToast();
+  const a = noComment ? analyzeText(text, ctxFor(fq.question, fq.issue)) : await analyze(s, text, { question: fq.question, questionIssue: fq.issue, opponentPartyId: fq.partyId, counterpart: fq.asker, kind: 'frågestund i riksdagen' });
+  const out = fragestundOutcome(s, G.rnd, fq, text, a, noComment);
+  let reply = null;
+  if (llmEnabled()) { try { const rr = await llmReplies({ situation: `Frågestund i riksdagen. ${fq.asker} (${fq.abbr}) frågade statsministern: "${fq.question}". Nu får ${fq.asker} en kort replik.`, playerText: text, playerName: 'Statsministern', abbr: me().abbr, speakers: [{ who: fq.asker, desc: 'oppositionsledare, skarp; en kort replik på 1–2 meningar' }], count: 1 }); reply = rr[0]?.text; } catch { /* mall */ } }
+  reply ||= out.delta > 2 ? 'Statsministern pratar gärna – men väljarna märker inte av någon förändring.' : 'Där hörde vi det igen: inga svar, bara ord.';
+  save();
+  await info('Frågestunden', `<p><b>${esc(fq.asker)}:</b> "${esc(reply)}"</p><p class="muted">${out.delta > 2 ? 'Ett tydligt svar – regeringens förtroende stärks något.' : out.delta < -2 ? 'Svaret övertygade inte. Det kostar.' : 'Ett ordinärt meningsutbyte.'}</p>`);
+}
+// Frågestunden åt andra hållet: du frågar statsministern
+export async function askPmFlow(a, run, ui) {
+  const s = G.state; const pm = s.people[s.government.pm];
+  const r = await textDialog({ title: `🙋 Fråga statsministern${pm ? ' ' + pm.name : ''}`, intro: 'Frågestund i riksdagen. Ställ en kort, skarp fråga – gärna med en siffra som stämmer.', placeholder: 'Herr talman! Min fråga till statsministern gäller …', rows: 3, maxlength: 600, ctx: ctxFor(), okLabel: 'Ställ frågan (1 AP)' });
+  if (!r) return;
+  busyToast();
+  const an = await analyze(s, r.text, { kind: 'fråga till statsministern i riksdagen', counterpart: pm?.name });
+  const out = askPmOutcome(s, G.rnd, r.text, an);
+  let reply = null;
+  if (pm && llmEnabled()) { try { const rr = await llmReplies({ situation: `Frågestund i riksdagen. Statsministern ${pm.name} (${s.parties[s.government.pmParty]?.abbr}) svarar på en fråga från oppositionen.${out.hit ? ' Frågan träffade en öm punkt.' : ''}`, playerText: r.text, playerName: leader().name, abbr: me().abbr, speakers: [{ who: pm.name, desc: 'statsminister, rutinerad; försvarar regeringen i 2–3 meningar' }], count: 1 }); reply = rr[0]?.text; } catch { /* mall */ } }
+  reply ||= out.hit ? 'Det är … en relevant fråga. Regeringen följer utvecklingen noga och återkommer.' : 'Jag tackar för frågan. Regeringen har redan vidtagit kraftfulla åtgärder – det vet ledamoten mycket väl.';
+  run({ note: out.hit ? 'Frågan satte press på regeringen.' : 'Statsministern parerade frågan.' });
+  await info('Frågestunden', `<p><b>${esc(pm?.name || 'Statsministern')}:</b> "${esc(reply)}"</p><p class="muted">${out.hit ? 'Frågan träffade – medierna citerar dig.' : 'Statsministern kom undan den här gången.'}</p>`);
 }

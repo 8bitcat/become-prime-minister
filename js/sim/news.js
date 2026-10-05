@@ -4,11 +4,14 @@ import { STAT_BY_ID } from '../data/stats.js';
 import { pick, fmt } from '../core/util.js';
 import { activeParties } from './opinion.js';
 
+// I webbläsaren kan spelets AI registrera sig här och skriva om viktiga artiklar i bakgrunden
+export const newsHooks = { onNews: null };
 export function addNews(state, n) {
   const item = { id: 'n' + state.week + '_' + Math.floor(Math.random() * 1e6).toString(36), week: state.week, date: { ...state.date }, outlet: n.outlet || 'svt', headline: n.headline, body: n.body || '', tags: n.tags || [], partyId: n.partyId || null, importance: n.importance || 1, tone: n.tone || 0 };
   state.news.unshift(item);
   if (state.news.length > 400) state.news.pop();
   if (n.partyId && state.parties[n.partyId]) state.parties[n.partyId].attention = Math.min(100, state.parties[n.partyId].attention + (n.importance || 1) * 3);
+  if (newsHooks.onNews) try { newsHooks.onNews(state, item); } catch { /* aldrig stoppa simuleringen */ }
   return item;
 }
 

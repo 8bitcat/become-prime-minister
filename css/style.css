@@ -380,3 +380,16 @@ kbd { background: var(--bg2); border: 1px solid var(--line); border-radius: 4px;
 .logo-up { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .logo-up input[type=file] { max-width: 260px; font-size: 12px; }
 .drift { font-size: 12px; color: var(--muted); margin-top: 4px; }
+/* ---------- v0.6: spelets AI, staben ---------- */
+.aichip { white-space: nowrap; }
+.aichip.on { border-color: var(--green); color: #5ee3a8; }
+.aichip.load { border-color: var(--gold); color: var(--gold); }
+.aichip.err { border-color: var(--red); color: #ff7a7f; }
+.chatcard { display: flex; flex-direction: column; min-height: 60vh; }
+.chatlog { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 6px 2px; max-height: 58vh; }
+.chatlog .msg { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; max-width: 82%; font-size: 14px; line-height: 1.45; white-space: pre-wrap; }
+.chatlog .msg.mine { align-self: flex-end; background: #1b2a44; border-color: var(--gold); }
+.chatlog .msg b { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.chatlog .msg.typing div { color: var(--muted); font-style: italic; }
+.chatin { display: flex; gap: 8px; margin-top: 8px; align-items: flex-end; }
+.chatin textarea { flex: 1; resize: vertical; font-size: 15px; }

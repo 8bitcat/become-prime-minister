@@ -28,7 +28,10 @@ const me = () => state.parties[state.player.partyId];
 const fmtSup = () => activeParties(state).map((p) => `${p.abbr} ${(state.opinion.support[p.id] || 0).toFixed(1)}`).join('  ');
 console.log(`Start: ${mode} · regering: ${state.government.parties.join('+')} stöd ${state.government.support.join(',')} typ ${state.government.type}`);
 console.log('v0  ' + fmtSup());
-let errors = 0, debates = 0, votes = 0, events = 0, scandals = 0, elections = 0, factions = 0, leaderChanges = 0, notes = 0;
+let errors = 0, debates = 0, votes = 0, events = 0, scandals = 0, elections = 0, factions = 0, leaderChanges = 0, notes = 0, speeches = 0, questions = 0;
+const { analyzeText } = await import('../js/ai/analyze.js');
+const { speechReactions } = await import('../js/ai/generate.js');
+const { eventSpeechOutcome, fragestundQuestion, fragestundOutcome } = await import('../js/sim/calendar.js');
 for (let w = 0; w < weeks; w++) {
   try {
     // spela: några handlingar per vecka
@@ -57,6 +60,9 @@ for (let w = 0; w < weeks; w++) {
       else if (q.type === 'challenge') { const ch = state.people[q.challengerId]; if (ch && rnd() < .5) { installLeader(state, me(), ch, 'test'); state.player.leaderId = ch.id; leaderChanges++; } }
       else if (q.type === 'manifest') { const c = manifestCandidates(state).slice(0, 4).map((x) => x.b.id); if (c.length >= 3) setManifest(state, c); }
       else if (q.type === 'note' || q.type === 'retire') notes++;
+      else if (q.type === 'speechEvent') { const txt = 'Kära vänner! Sverige förtjänar bättre. Vi lovar 10 000 fler poliser och kortare vårdköer. Tillsammans vinner vi!'; const a = analyzeText(txt, { stats: state.sweden.stats }); eventSpeechOutcome(state, rnd, q.event, txt, speechReactions(state, rnd, txt, a, null), a); speeches++; }
+      else if (q.type === 'fragestund') { const fq = fragestundQuestion(state, rnd); const txt = 'Regeringen har anställt fler poliser och skjutningarna minskar. Vi fortsätter.'; fragestundOutcome(state, rnd, fq, txt, analyzeText(txt, { stats: state.sweden.stats, question: fq.question }), false); questions++; }
+      else if (q.type === 'statement') { notes++; }
     }
     if (state.week % 20 === 0) { const s = state.sweden.stats; console.log(`v${state.week} ${state.date.y}-${String(state.date.m).padStart(2, '0')}  ${fmtSup()}  | aw ${(state.opinion.awareness[me().id]).toFixed(2)} att ${me().attention.toFixed(0)} cred ${me().credibility.toFixed(0)} kr ${(me().money / 1e3).toFixed(0)}k | BNP ${s.bnp_tillvaxt.toFixed(1)} infl ${s.inflation.toFixed(1)} arb ${s.arbetsloshet.toFixed(1)} ränta ${s.styrranta} skjut ${s.skjutningar.toFixed(0)} vårdkö ${s.vardkoer.toFixed(0)} skuld ${s.statsskuld_bnp.toFixed(0)}% gov ${state.government.approval.toFixed(0)}`); }
   } catch (e) { errors++; console.error(`FEL vecka ${state.week}:`, e.stack); if (errors > 3) break; }
@@ -64,7 +70,7 @@ for (let w = 0; w < weeks; w++) {
 const s = state.sweden.stats;
 console.log('Reformer antagna: ' + (state.sweden.reforms || []).filter((r) => r.billId.startsWith('reform:')).length + ' · lag≠default: ' + Object.keys(state.policy).filter((k) => { const { POLICY_BY_ID } = globalThis.__pol || {}; return false; }).length + ' · kapital ' + Math.round(state.government.capital ?? 0) + ' · ideologi: ' + (await import('../js/sim/policy.js')).ideologyDescription(me().program).label);
 console.log(`
-Klart: ${weeks} veckor · debatter ${debates} · omröstningar ${votes} · händelser ${events} · skandaler ${scandals} · val ${elections} · falangkrav ${factions} · ledarbyten ${leaderChanges} · noteringar ${notes} · partier ${activeParties(state).length} (${activeParties(state).map((p) => p.abbr).join(',')}) · fel ${errors}`);
+Klart: ${weeks} veckor · debatter ${debates} · omröstningar ${votes} · händelser ${events} · skandaler ${scandals} · val ${elections} · falangkrav ${factions} · ledarbyten ${leaderChanges} · noteringar ${notes} · kalendertal ${speeches} · frågestunder ${questions} · partier ${activeParties(state).length} (${activeParties(state).map((p) => p.abbr).join(',')}) · fel ${errors}`);
 console.log('Förtroende ' + Math.round(me().trust ?? 0) + ' · medlemmar ' + me().members + ' · falanger ' + (me().factions || []).map((f) => `${f.name} ${f.mood.toFixed(0)}/${f.strength.toFixed(0)}`).join(', ') + ' · kommuner ' + (me().localBase?.kommuner ?? 0) + ' · tidslinje ' + state.history.timeline.length + ' · biografier ' + state.history.bios.length + ' · journalister ' + Object.keys(state.journalists).length);
 const bad = Object.entries(s).filter(([k, v]) => !Number.isFinite(v));
 console.log(bad.length ? 'ICKE-NUMERISKA STATS: ' + bad.map(([k]) => k).join(', ') : 'Alla stats numeriska.');

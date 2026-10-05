@@ -5,7 +5,9 @@ import { ISSUES, ISSUE_BY_ID, issueLabel } from '../data/issues.js';
 import { REGIONS } from '../data/regions.js';
 import { logoSVG, imageToLogo } from '../art/logo.js';
 import { characterArt as characterSVG } from '../art/sprites.js';
-import { postFlow, threadDialog, pressFlow, speechFlow, talkFlow, utspelFlow, fokusFlow, statementDialog, aiSettingsDialog, textDialog } from './freetext.js';
+import { postFlow, threadDialog, pressFlow, speechFlow, talkFlow, utspelFlow, fokusFlow, statementDialog, aiSettingsDialog, textDialog, offerLocalAi, speechEventFlow, fragestundDialog, askPmFlow } from './freetext.js';
+import { pageAdvisor } from './advisor.js';
+import { localStatus } from '../ai/local.js';
 import { negotiationCounter } from '../sim/talk.js';
 import { analyze } from '../ai/generate.js';
 import { llmEnabled } from '../ai/llm.js';
@@ -36,8 +38,9 @@ import { POLICY_BY_ID, policyLabel } from '../data/policies.js';
 
 const me = () => G.state.parties[G.state.player.partyId];
 const leader = () => G.state.people[me().leader];
-const NAV = [['oversikt', '🏠', 'Översikt'], ['partiet', '🎗️', 'Partiet'], ['politik', '⚖️', 'Politiken'], ['sverige', '🇸🇪', 'Sverige'], ['riksdagen', '🏛️', 'Riksdagen'], ['opinion', '📊', 'Opinion'], ['nyheter', '📰', 'Nyheter'], ['some', '📱', 'Sociala medier'], ['regeringen', '👔', 'Regeringen'], ['valet', '🗳️', 'Valet'], ['varlden', '🌍', 'Världen'], ['historik', '📜', 'Historik']];
+const NAV = [['oversikt', '🏠', 'Översikt'], ['partiet', '🎗️', 'Partiet'], ['politik', '⚖️', 'Politiken'], ['sverige', '🇸🇪', 'Sverige'], ['riksdagen', '🏛️', 'Riksdagen'], ['opinion', '📊', 'Opinion'], ['stab', '💬', 'Staben'], ['nyheter', '📰', 'Nyheter'], ['some', '📱', 'Sociala medier'], ['regeringen', '👔', 'Regeringen'], ['valet', '🗳️', 'Valet'], ['varlden', '🌍', 'Världen'], ['historik', '📜', 'Historik']];
 
+export { offerLocalAi };
 export const UI = {
   page: 'oversikt', sub: undefined, busy: false, onExit: null,
   go(page, sub) { this.page = page; this.sub = sub; this.render(); },
@@ -70,11 +73,14 @@ function renderShell() {
     <div class="stat"><small>Ledare</small><b>${pct(l.approval, 0)}</b></div>
     <div class="stat"><small>Handlingspoäng</small><b class="ap">${Array.from({ length: s.apMax }, (_, i) => `<i class="${i < s.ap ? '' : 'off'}"></i>`).join('')}</b></div>
     <div class="spacer"></div>
+    <button class="btn sm aichip" id="aichip" title="Spelets AI"></button>
     ${isPlayerPM(s) ? '<span class="tag gold">STATSMINISTER</span>' : ''}${s.election.campaign ? '<span class="tag red">VALRÖRELSE</span>' : ''}
     <button class="btn" id="menu">☰</button>
     <button class="btn gold" id="next" ${UI.busy ? 'disabled' : ''}>Nästa vecka ▶</button>`;
   top.querySelector('#next').addEventListener('click', nextWeek);
   top.querySelector('#menu').addEventListener('click', menuDialog);
+  top.querySelector('#aichip').addEventListener('click', () => aiSettingsDialog());
+  paintAiChip(top.querySelector('#aichip'));
   const nav = h('div', { class: 'sidenav' });
   for (const [id, ic, name] of NAV) {
     const b = h('button', { class: UI.page === id ? 'on' : '', onclick: () => UI.go(id) }, h('span', { class: 'ic' }, ic), name);
@@ -86,11 +92,21 @@ function renderShell() {
   nav.append(h('div', { class: 'sep' }), h('button', { onclick: helpDialog }, h('span', { class: 'ic' }, '❓'), 'Hjälp'), h('div', { style: 'flex:1' }), h('small', { class: 'muted', style: 'padding:6px 10px' }, `v${VERSION} · autosparat ${new Date(s.updated).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}`));
   const content = h('div', { class: 'content' });
   const inner = h('div', { class: 'inner' });
-  try { const pageEl = UI.page === 'politik' ? pagePolitik(s, UI, UI.sub) : (PAGES[UI.page] || PAGES.oversikt)(s, UI, UI.sub); UI.currentPage = pageEl; inner.append(pageEl); } catch (e) { console.error(e); inner.append(h('div', { class: 'card' }, 'Kunde inte rita sidan: ' + e.message)); }
+  try { const pageEl = UI.page === 'politik' ? pagePolitik(s, UI, UI.sub) : UI.page === 'stab' ? pageAdvisor(s, UI, UI.sub) : (PAGES[UI.page] || PAGES.oversikt)(s, UI, UI.sub); UI.currentPage = pageEl; inner.append(pageEl); } catch (e) { console.error(e); inner.append(h('div', { class: 'card' }, 'Kunde inte rita sidan: ' + e.message)); }
   content.append(inner);
   game.append(top, nav, content);
   app.append(game);
 }
+
+// AI-indikatorn i toppraden: avstängd / laddar 34 % / tänker / redo
+function paintAiChip(el) {
+  if (!el) return;
+  const st = localStatus();
+  el.className = 'btn sm aichip ' + (st.state === 'klar' ? 'on' : st.state === 'laddar' ? 'load' : st.state === 'fel' ? 'err' : '');
+  el.textContent = st.state === 'klar' ? (st.busy ? '🧠 tänker …' : '🧠 AI') : st.state === 'laddar' ? `🧠 ${st.progress} %` : st.state === 'fel' ? '🧠 fel' : '🧠 av';
+  el.title = st.state === 'klar' ? 'Spelets AI är igång – klicka för inställningar' : st.state === 'laddar' ? `Spelets AI laddas: ${st.text || ''}` : 'Spelets AI är avstängd – klicka för att starta';
+}
+document.addEventListener('bpm:localai', () => { paintAiChip(document.getElementById('aichip')); if (localStatus().state === 'klar' && UI.page === 'stab' && !UI.busy && !document.querySelector('.modal, .aa')) { const ta = document.querySelector('.chatin textarea'); if (!ta || !ta.value) renderShell(); } });
 
 // ---------- VECKA ----------
 async function nextWeek() {
@@ -132,6 +148,8 @@ async function handleQueueItem(item) {
     case 'vote': return voteDialog(s.riksdag.bills.find((b) => b.id === item.billItemId));
     case 'resurfaced': return resurfacedDialog(s.social.posts.find((x) => x.id === item.postId));
     case 'statement': return statementDialog(item, UI);
+    case 'speechEvent': return speechEventFlow(item);
+    case 'fragestund': return fragestundDialog(item);
     case 'election': { const el = s.election.pending; if (!el) return; await runElectionNight(s, el); applyElection(s, el); s.election.pending = null; save(); s.queue.splice(1, 0, { type: 'formation', reason: 'val', round: 1 }); return; }
     case 'formation': { if (!s.government.pm || item.reason === 'val') { if (s.government.pm) dissolveGovernment(s, 'val'); await runFormation(s, rnd, item); } return; }
     case 'offer': return runOffer(s, rnd, item);
@@ -200,6 +218,7 @@ async function actionDialog(a, extra = {}) {
   if (a.needs === 'talk') return talkFlow(a, run, UI);
   if (a.needs === 'utspel') return utspelFlow(a, run, UI);
   if (a.needs === 'fokus') return fokusFlow(a, run, UI);
+  if (a.needs === 'askpm') return askPmFlow(a, run, UI);
   if (a.needs === 'issue') { const i = await pickIssue(a.name); if (i == null) return; return run({ issue: i }); }
   if (a.needs === 'region') { const i = await choice({ title: a.name, text: 'Vart reser du?', choices: REGIONS.map((r) => ({ label: r.name, desc: `${r.pop} tusen inv.` })), wide: true }); return run({ region: REGIONS[i].id }); }
   if (a.needs === 'party') { const list = activeParties(s).filter((q) => !q.isPlayer); const i = await choice({ title: a.name, text: 'Vem träffar du?', choices: list.map((q) => ({ label: `${q.name}`, desc: `${s.people[q.leader].name} · relation ${q.relations?.[me().id] || 0}` })) }); return run({ party: list[i].id }); }
@@ -403,14 +422,14 @@ function logoFlow() {
 let spritesTimer = null;
 document.addEventListener('bpm:sprites', () => { if (!G.state) return; clearTimeout(spritesTimer); spritesTimer = setTimeout(() => { if (!UI.busy) renderShell(); }, 120); });
 function menuDialog() {
-  modal({ title: 'Meny', body: `<p class="help">Spelet sparas automatiskt efter varje handling och vecka. Här kan du dessutom exportera sparfilen, slå på Claude-läget eller gå tillbaka till startskärmen.</p>`, buttons: [{ label: `🤖 AI-läge (Claude) – ${llmEnabled() ? 'på' : 'av'}`, onClick: () => aiSettingsDialog() }, { label: 'Exportera sparfil', onClick: () => exportSave() }, { label: 'Till startskärmen', onClick: () => { save(); UI.onExit?.(); } }, { label: 'Stäng', cls: 'gold' }], stack: true });
+  modal({ title: 'Meny', body: `<p class="help">Spelet sparas automatiskt efter varje handling och vecka. Här kan du dessutom starta spelets AI, exportera sparfilen eller gå tillbaka till startskärmen.</p>`, buttons: [{ label: `🧠 Spelets AI – ${localStatus().state === 'klar' ? 'igång' : localStatus().state === 'laddar' ? 'laddar ' + localStatus().progress + ' %' : 'av'}`, onClick: () => aiSettingsDialog() }, { label: 'Exportera sparfil', onClick: () => exportSave() }, { label: 'Till startskärmen', onClick: () => { save(); UI.onExit?.(); } }, { label: 'Stäng', cls: 'gold' }], stack: true });
 }
 function helpDialog() {
   modal({ title: 'Så spelar du', wide: true, body: `
     <p><b>Varje vecka</b> har du handlingspoäng (AP). Använd dem på presskonferenser, turnéer, sociala medier, riksdagsarbete, partibygge – och tryck sedan <b>Nästa vecka</b>. Då händer allt annat: statistiken uppdateras, opinionen rör sig, medierna rapporterar, händelser och skandaler inträffar.</p>
     <p><b>Opinionen</b> styrs av hur nära din politik ligger varje väljargrupp i de frågor som är heta just nu, av partiledarens personlighet och stöd, trovärdighet, uppmärksamhet, skandaler, regeringens leverans – och kännedom. Ett nytt parti måste först bli känt.</p>
     <p><b>Riksdagen</b>: lagförslag kommer till omröstning efter tre veckor. Förhandla med andra partier för att få igenom dina egna – de ställer krav. Omröstningar sparas i partiernas röstminne och kan användas i debatter ("INVÄNDNING!").</p>
-    <p><b>Du skriver själv.</b> Inlägg, debattsvar, presskonferenser, tal, förhandlingsbud och enskilda samtal skrivs i fri text. Spelet läser vad du faktiskt skrev: ton (saklig, kämpande, konfrontativ, humor, personlig, undvikande), vilka frågor du berör, om du svarar på frågan, löften med siffror (de sparas och granskas), faktapåståenden (fel siffror faktakollas) och motsägelser mot vad du sagt tidigare. Gamla uttalanden kan grävas fram år senare. Under ☰ Meny kan du lägga in en egen Anthropic-nyckel så att Claude läser dina texter och skriver motståndarnas repliker.</p>
+    <p><b>Du skriver själv.</b> Inlägg, debattsvar, presskonferenser, tal, förhandlingsbud och enskilda samtal skrivs i fri text. Spelet läser vad du faktiskt skrev: ton (saklig, kämpande, konfrontativ, humor, personlig, undvikande), vilka frågor du berör, om du svarar på frågan, löften med siffror (de sparas och granskas), faktapåståenden (fel siffror faktakollas) och motsägelser mot vad du sagt tidigare. Gamla uttalanden kan grävas fram år senare. Under ☰ Meny → Spelets AI startar du spelets egen språkmodell, som körs på din dator utan nyckel: då förstår spelet allt du skriver och alla svarar med egna ord. Under <b>Staben</b> pratar du fritt med dina rådgivare.</p>
     <p><b>Debatter</b> spelas som scener: skriv ditt svar (eller utgå från ett förslag). Journalister ställer följdfrågor när du inte svarar, motståndare avbryter, och gör motståndaren ett faktafel kan du avslöja det – INVÄNDNING!</p>
     <p><b>Valet</b> hålls andra söndagen i september vart fjärde år. Valrörelsen börjar åtta veckor innan. Efter valet bildas regering: statsministern tolereras om färre än 175 röstar nej.</p>
     <p><b>Sverige</b> simuleras månad för månad: ekonomi, välfärd, brott, klimat, försvar, demokrati, regioner. Reformer märks med fördröjning.</p>

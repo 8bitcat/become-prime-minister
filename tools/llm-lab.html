@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="sv"><head><meta charset="utf-8"><title>LLM-labb</title></head>
+<body><pre id="log">laddar…</pre>
+<script type="module">
+// Testlabb för lokala språkmodeller (WebLLM/WebGPU). Används av tools/llm-lab.mjs.
+import * as webllm from 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.85/+esm';
+const log = (s) => { document.getElementById('log').textContent += '\n' + s; };
+let engine = null, current = '';
+// Gemma saknar systemroll → lägg systemtexten först i första användarmeddelandet
+const prep = (messages) => { if (!/gemma/i.test(current)) return messages; const sys = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n'); const rest = messages.filter((m) => m.role !== 'system').map((m) => ({ ...m })); if (sys && rest[0]) rest[0].content = sys + '\n\n' + rest[0].content; return rest; };
+window.lab = {
+  async load(id) {
+    const t0 = performance.now();
+    if (engine) { await engine.unload(); }
+    current = id;
+    engine = await webllm.CreateMLCEngine(id, { initProgressCallback: (p) => { window.lab.progress = p.text; } });
+    return { ms: Math.round(performance.now() - t0) };
+  },
+  async chat(messages, { schema = null, max = 400, temp = .6, think = false, fp = .4 } = {}) {
+    const t0 = performance.now();
+    const req = { messages: prep(messages), max_tokens: max, temperature: temp, top_p: .9, frequency_penalty: fp, presence_penalty: fp * .5, extra_body: { enable_thinking: think } };
+    if (schema) req.response_format = { type: 'json_object', schema: JSON.stringify(schema) };
+    const r = await engine.chat.completions.create(req);
+    const text = (r.choices[0].message.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    return { ms: Math.round(performance.now() - t0), text, usage: r.usage };
+  },
+};
+log('redo');
+window.labReady = true;
+</script></body></html>

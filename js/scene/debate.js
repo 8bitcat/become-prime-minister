@@ -111,6 +111,9 @@ export function runDebate(state, rnd, opts) {
       if (r.interview || r.podd) box.querySelector('#noc').addEventListener('click', () => finish({ text: 'Ingen kommentar. Nästa fråga.', noComment: true }));
       setTimeout(() => ta.focus(), 50);
     });
+    // "tänker…" i textrutan medan spelets AI läser och svarar
+    const thinking = (label) => { if (!label) return; nm.style.display = 'none'; txt.textContent = '💭 ' + label; nx.style.display = 'none'; };
+    d.convo = [];
     const showEvidence = (text) => { const e = h('div', { class: 'evidence' }); e.innerHTML = `<b>Bevis</b>${esc(text)}`; view.append(e); setTimeout(() => e.remove(), skipAll ? 100 : 4000); };
     const expFor = (dom) => ({ aggressiv: 'angry', kansla: 'determined', humor: 'happy', undvikande: 'nervous', kampande: 'confident', saklig: 'confident' })[dom] || 'confident';
 
@@ -129,6 +132,7 @@ export function runDebate(state, rnd, opts) {
         if (!r.gaffe && !r.interview && !r.podd && !r.interrupt && !r.followed && d.gaffeBoost && rnd() < d.gaffeBoost) addGaffe(state, rnd, r, op);
         const mx = moodExpr(d.mood, r.podd ? 'happy' : r.interrupt ? 'angry' : r.interview ? 'neutral' : r.opExpr, r.podd ? 'open' : r.interrupt ? 'point' : r.interview ? 'think' : i % 2 ? 'point' : 'cross');
         await say('right', op, r.statement, { expr: mx.expr, pose: mx.pose });
+        d.convo.push({ who: op.name, text: r.statement });
         const ans = await compose(r, { prompt: r.interrupt ? 'Snabb replik' : r.followed ? 'Följdfrågan' : 'Ditt svar', short: !!r.interrupt });
         let out;
         if (ans.option != null) {
@@ -136,17 +140,25 @@ export function runDebate(state, rnd, opts) {
           await burst('INVÄNDNING!'); flash(); if (o.evidence) showEvidence(o.evidence);
           out = resolveOption(state, rnd, d, d.rounds.indexOf(r), ans.option);
           await say('left', ml, o.text, { expr: 'objection', pose: out.myPose });
+          d.convo.push({ who: ml.name, text: o.text });
         } else {
-          const a = await analyze(state, ans.text, { question: r.statement, questionIssue: r.issue, opponentPartyId: opP?.id || null, counterpart: op.name });
+          thinking(llmEnabled() ? `${op.first || op.name} lyssnar …` : '');
+          const a = await analyze(state, ans.text, { question: r.statement, questionIssue: r.issue, opponentPartyId: opP?.id || null, counterpart: op.name, kind: d.kind === 'podd' ? 'poddintervju' : d.kind === 'interview' ? 'TV-utfrågning' : d.kind === 'riksdag' ? 'riksdagsdebatt' : 'TV-debatt' });
           if (ans.noComment) { a.dominant = 'undvikande'; a.answers = 0; }
           out = resolveFree(state, rnd, d, d.rounds.indexOf(r), ans.text, a);
+          // motståndarens/journalistens svar skrivs utifrån vad du faktiskt sa – och allt som sagts tidigare i samtalet.
+          // Det börjar skrivas medan din replik visas.
+          const hist = d.convo.slice(-8);
+          const replyP = (!r.interview && !r.podd && opP) ? (out.moodEff?.outburst || out.moodEff?.breakdown || out.moodEff?.concede ? Promise.resolve(null) : opponentReply(state, rnd, { opponentParty: opP, opponent: op, playerText: ans.text, analysis: { ...a, contradictions: out.contradictions }, issue: r.issue, statement: r.statement, mood: out.mood, moodRaw: d.mood, history: hist }))
+            : followUp(state, rnd, { question: r.statement, answer: ans.text, analysis: { ...a, contradictions: out.contradictions }, journalist: j, issue: r.issue, kind: d.kind, history: hist });
           if (out.caught) { await burst('INVÄNDNING!'); flash(); if (out.evidence) showEvidence(out.evidence); }
           else if (a.dominant === 'aggressiv') await burst('VÄNTA LITE!', 'blue');
           await say('left', ml, ans.text, { expr: out.caught ? 'objection' : expFor(a.dominant), pose: out.myPose });
-          // motståndarens/journalistens svar skrivs utifrån vad du faktiskt sa
-          if (!r.interview && !r.podd && opP && !out.moodEff?.outburst && !out.moodEff?.breakdown && !out.moodEff?.concede) { const rep = await opponentReply(state, rnd, { opponentParty: opP, opponent: op, playerText: ans.text, analysis: { ...a, contradictions: out.contradictions }, issue: r.issue, statement: r.statement, mood: out.mood, moodRaw: d.mood }); if (rep) out.reply = rep; }
-          else { const fu = await followUp(state, rnd, { question: r.statement, answer: ans.text, analysis: { ...a, contradictions: out.contradictions }, journalist: j, issue: r.issue, kind: d.kind }); if (fu) out.reply = fu; }
+          d.convo.push({ who: ml.name, text: ans.text });
+          thinking(llmEnabled() ? `${op.first || op.name} tänker …` : '');
+          const rep = await replyP.catch(() => null); if (rep) out.reply = rep;
         }
+        d.convo.push({ who: op.name, text: out.reply });
         setMeter(); updateMood();
         if (out.ok && out.delta > 15) { flash(); sting('win'); } else if (!out.ok) sting('lose');
         if (out.moodEff?.outburst) { await burst('UTBROTT!', 'blue'); } else if (out.moodEff?.breakdown) sting('lose');

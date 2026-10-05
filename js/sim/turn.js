@@ -24,6 +24,7 @@ import { leakSecretDeals, utspelEffect } from './talk.js';
 import { monthlyMinisters } from './government.js';
 import { driftTraits } from './drift.js';
 import { monthlyGrudges } from './emotion.js';
+import { calendarWeek } from './calendar.js';
 
 const me = (s) => s.parties[s.player.partyId];
 const leader = (s) => s.people[me(s).leader];
@@ -90,6 +91,7 @@ export function endWeek(state, rnd) {
   { const l = leader(state); l.fatigue = clamp((l.fatigue || 0) - 6, 0, 100); if (l.fatigue >= 75 && !state.flags.fatigueNews) { state.flags.fatigueNews = state.week; addNews(state, { outlet: pick(rnd, ['expressen', 'aftonbladet']), headline: `Är ${l.name} utbränd? "Ser sliten ut"`, body: `Partiledaren har hållit ett rasande tempo. Partikamrater oroar sig – och motståndarna ser en öppning.`, tags: ['parti'], partyId: p.id, importance: 1, tone: -1 }); } if (l.fatigue < 40) delete state.flags.fatigueNews; }
 
   // --- händelser, skandaler, sociala medier ---
+  for (const it of calendarWeek(state, rnd, prevDate, report)) queue(state, it);
   for (const ev of rollEvents(state, rnd)) queue(state, ev.kind === 'interview' ? { type: 'interview' } : ev.kind === 'debate' ? { type: 'debate', debate: ev.debate } : { type: 'event', event: ev });
   for (const sc of rollScandals(state, rnd)) queue(state, { type: 'scandal', scandalId: sc.id });
   decayScandals(state, rnd);
@@ -210,6 +212,7 @@ export const ACTIONS = [
   { id: 'reform', name: 'Föreslå reform', ic: '⚖️', ap: 1, desc: 'Föreslå att en lag ändras – skatter, migration, välfärd, försvar, vad som helst i politiken. Omröstning om tre veckor. Som statsminister kostar det politiskt kapital.', needs: 'reform', cond: (s) => me(s).inRiksdag && (s.riksdag.seats[me(s).id] || 0) > 0 && s.riksdag.session },
   { id: 'motion', name: 'Lägg fram lagförslag', ic: '🏛️', ap: 1, desc: 'Lägg en motion i riksdagen. Omröstning om tre veckor. Förhandla med andra partier för att få stöd.', needs: 'bill', cond: (s) => me(s).inRiksdag && (s.riksdag.seats[me(s).id] || 0) > 0 && s.riksdag.session },
   { id: 'forhandla', name: 'Förhandla om ett förslag', ic: '🤝', ap: 1, desc: 'Sök stöd från ett annat parti för ditt liggande förslag. De kommer att ställa krav.', needs: 'negotiate', cond: (s) => s.riksdag.bills.some((b) => b.status === 'pending' && b.byPlayer) },
+  { id: 'fragestund', name: 'Frågestund med statsministern', ic: '🙋', ap: 1, desc: 'Ställ en fråga till statsministern i riksdagens frågestund – med egna ord. En skarp, saklig fråga pressar regeringen; en dålig fråga blir ett klipp åt fel håll.', needs: 'askpm', cond: (s) => me(s).inRiksdag && (s.riksdag.seats[me(s).id] || 0) > 0 && s.riksdag.session && s.government.pm && !isPlayerPM(s) },
   { id: 'samtal', name: 'Enskilt samtal', ic: '☕', ap: 1, desc: 'Prata på tu man hand med en partiledare, en partikamrat eller en journalist off record. Det du säger stannar i rummet – oftast.', needs: 'talk' },
   { id: 'reklam', name: 'Reklamkampanj', ic: '📺', ap: 1, money: (s) => me(s).inRiksdag ? 2000000 : 200000, desc: 'Köp annonser i TV, tidningar och sociala medier. Kännedom och stöd ökar brett.', cond: (s) => s.election.campaign },
   { id: 'dorr', name: 'Dörrknackning', ic: '🚪', ap: 1, desc: 'Mobilisera medlemmarna att knacka dörr. Effekten beror på organisationens styrka.', cond: (s) => s.election.campaign },
@@ -255,6 +258,7 @@ export function doAction(state, rnd, id, params = {}) {
       break;
     }
     case 'fokusgrupp': { text = 'Fokusgruppen är genomförd.'; break; }
+    case 'fragestund': { text = params.note || 'Frågan är ställd.'; break; }
     case 'utspel': {
       if (params.text && params.analysis) { const r = utspelEffect(state, rnd, params.text, params.analysis, params.issue || null); att(6 * (.5 + r.clear)); bumpAw(.02); text = r.vague ? `Utspelet om ${ISSUE_BY_ID[r.issue].name.toLowerCase()} uppfattades som vagt.` : `Utspelet om ${ISSUE_BY_ID[r.issue].name.toLowerCase()} gjordes – frågan är nu hetare.${r.contradictions.length ? ' Medierna noterade en motsägelse.' : ''}`; break; }
       const is = ISSUE_BY_ID[params.issue];

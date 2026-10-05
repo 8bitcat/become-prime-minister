@@ -10,7 +10,11 @@ export const MODELS = [
 ];
 export function llmSettings() { try { return JSON.parse(localStorage.getItem(KEY) || 'null') || { key: '', model: 'claude-opus-5-5', enabled: false }; } catch { return { key: '', model: 'claude-opus-5-5', enabled: false }; } }
 export function saveLlmSettings(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* ok */ } }
-export const llmEnabled = () => { const s = llmSettings(); return !!(s.enabled && s.key); };
+// Claude används ENDAST om spelaren själv har lagt in en nyckel och slagit på det
+export const claudeOn = () => { const s = llmSettings(); return !!(s.enabled && s.key); };
+// "Spelets AI är igång": i första hand den lokala modellen i webbläsaren, annars (valfritt) Claude
+export const llmEnabled = () => localReady() || claudeOn();
+export const aiSource = () => (localReady() ? 'local' : claudeOn() ? 'claude' : null);
 
 let clientPromise = null;
 async function client() {
@@ -23,8 +27,9 @@ export function resetClient() { clientPromise = null; }
 
 const SYSTEM = `Du är spelmotorn i "Become Prime Minister", en svensk politisk simulering. Du analyserar vad spelaren (en partiledare) skriver och skriver repliker åt journalister, motståndare, väljare och andra figurer i spelet. Svara alltid på svenska, kort och naturligt, i den ton som passar figuren. Du hittar inte på verkliga personer. Du får bara använda siffror som står i kontexten. Håll dig strikt till det JSON-format som efterfrågas.`;
 
-// Gemensam JSON-anrop. schema = JSON-schema för svaret.
+// Gemensam JSON-anrop till Claude (bara om spelaren själv slagit på det). schema = JSON-schema för svaret.
 export async function askJSON(prompt, schema, { maxTokens = 1500, effort = 'low' } = {}) {
+  if (!claudeOn()) throw new Error('Claude är inte påslaget');
   const s = llmSettings();
   const c = await client();
   const res = await c.messages.create({
@@ -77,6 +82,16 @@ Returnera: dominant ton (saklig|kampande|aggressiv|humor|kansla|undvikande|dryg 
 // ---- generering av repliker ----
 export const REPLIES_SCHEMA = { type: 'object', additionalProperties: false, properties: { replies: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { who: { type: 'string' }, text: { type: 'string' }, tone: { type: 'string' } }, required: ['who', 'text', 'tone'] } } }, required: ['replies'] };
 export async function llmReplies(spec) {
+  if (localReady()) {
+    const { messages, schema } = repliesMessages({ situation: spec.situation, playerName: spec.playerName, playerText: spec.playerText, speakers: spec.speakers, history: spec.history || [], extra: spec.extra || '' });
+    const r = await localJSON(messages, schema, { max: 80 + spec.speakers.length * 110, temp: .8 });
+    return (r.repliker || []).filter((x) => x && x.text).map((x) => ({ who: x.vem, text: cleanReply(x.text), tone: 'lokal' }));
+  }
+  if (!claudeOn()) throw new Error('Ingen AI igång');
+  return claudeReplies(spec);
+}
+const cleanReply = (t) => { let x = tidy(String(t).replace(/^["“”']+|["“”']+$/g, '').replace(/\s+/g, ' ').trim()); if (!/[.!?…)"]$/.test(x) && /[.!?]/.test(x)) x = x.slice(0, Math.max(x.lastIndexOf('.'), x.lastIndexOf('!'), x.lastIndexOf('?')) + 1); return x; };
+async function claudeReplies(spec) {
   // spec: { situation, playerText, speakers: [{who, role, desc}], count, style }
   const prompt = `Situation: ${spec.situation}
 Partiledaren (${spec.playerName}, ${spec.abbr}) sa/skrev:
@@ -89,6 +104,11 @@ Varje replik 1–3 meningar, på svenska, i figurens röst och ton. Reagera på 
   return r.replies;
 }
 export const TEXT_SCHEMA = { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } }, required: ['text'] };
-export async function llmText(prompt, maxTokens = 600) { const r = await askJSON(prompt + '\nSvara med JSON {"text": "..."}', TEXT_SCHEMA, { maxTokens }); return r.text; }
+export async function llmText(prompt, maxTokens = 600) {
+  if (localReady()) { const r = await localJSON([{ role: 'system', content: SYSTEM_LOCAL }, { role: 'user', content: prompt }], { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, { max: Math.min(maxTokens, 400), temp: .7 }); return r.text; }
+  const r = await askJSON(prompt + '\nSvara med JSON {"text": "..."}', TEXT_SCHEMA, { maxTokens }); return r.text;
+}
+import { localReady, localJSON, tidy } from './local.js';
+import { repliesMessages, SYSTEM_LOCAL } from './prompts.js';
 // Snabbtest av nyckeln
 export async function llmPing() { const r = await askJSON('Svara med JSON {"text": "ok"}', TEXT_SCHEMA, { maxTokens: 50 }); return r.text; }
