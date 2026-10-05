@@ -4,7 +4,8 @@ import { fixLook, randomPersona, credOf } from './people.js';
 import { initJournalists, initInfluencers } from './media.js';
 import { makeRng } from '../core/util.js';
 import { extremismOf, demoOf } from '../data/ideologies.js';
-import { defaultPolicy } from '../data/policies.js';
+import { defaultPolicy, POLICIES } from '../data/policies.js';
+import { STATS } from '../data/stats.js';
 import { programFromAxes } from './policy.js';
 
 const START_IDEOLOGY = { s: 'socialdemokrati', sd: 'nationalkonservatism', m: 'liberalkonservatism', v: 'dem_socialism', c: 'gron_liberalism', kd: 'kristdemokrati', mp: 'gron', l: 'liberalism' };
@@ -36,6 +37,10 @@ export function migrate(state) {
   state.stats ||= { weeks: state.week, debates: 0, debatesWon: 0, billsPassed: 0, posts: 0 };
   state.flags ||= {};
   if (!state.policy) { state.policy = defaultPolicy(); const s = state.sweden.stats; for (const k of Object.keys(state.policy)) if (s[k] != null && typeof s[k] === 'number') state.policy[k] = s[k]; }
+  // nya politikområden och mätserier: gällande lag = dagens, partiernas ståndpunkt härleds ur deras axlar
+  for (const pol of POLICIES) if (state.policy[pol.id] == null) state.policy[pol.id] = pol.def;
+  for (const p of Object.values(state.parties)) { let base = null; for (const pol of POLICIES) if (p.program[pol.id] == null) { base ||= programFromAxes(p.pos); p.program[pol.id] = base[pol.id]; } }
+  for (const st of STATS) if (!st.derived && state.sweden.stats[st.id] == null) state.sweden.stats[st.id] = st.init;
   state.reforms ||= []; state.sweden.priceIndex ||= 1 + (state.sweden.months || 0) * .002; state.sweden.stats.integritet ??= 75;
   state.government.capital ??= 50; state.riksdag.vilande ||= [];
   // v4: politiskt minne, fritext-inlägg, trötthet, hemliga uppgörelser

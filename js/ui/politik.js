@@ -1,6 +1,6 @@
-// Politiken: över hundra områden. Gällande lag, partiets program, reformförslag.
+// Politiken: över trehundra områden i 26 domäner. Gällande lag, partiets program, reformförslag.
 import { h, esc, fmt, kr, dayDiff } from '../core/util.js';
-import { POLICIES, POLICY_BY_ID, DOMAINS, COMPASS, norm, policyLabel } from '../data/policies.js';
+import { POLICIES, POLICY_BY_ID, DOMAINS, DOMAIN_GROUPS, COMPASS, norm, policyLabel } from '../data/policies.js';
 import { ISSUE_BY_ID } from '../data/issues.js';
 import { effectiveLaw, reformCost, ideologyDescription, programText, DOMAIN_ISSUE, billLike } from '../sim/policy.js';
 import { isPlayerPM } from '../sim/government.js';
@@ -16,8 +16,18 @@ export function pagePolitik(s, ui, tab = 'migration') {
   const law = effectiveLaw(s);
   const desc = ideologyDescription(p.program || {});
   el.innerHTML = `<div class="page-title"><div><h2>Politiken</h2><small class="muted">${POLICIES.length} områden i ${Object.keys(DOMAINS).length} domäner. Vänster: gällande lag i Sverige. Höger: ert partiprogram. Ideologin räknas ut ur programmet – just nu: <b>${esc(desc.label)}</b>.</small></div><div class="row"><button class="btn" id="progTxt">📜 Partiprogrammet</button>${p.inRiksdag ? '<button class="btn gold" id="reformBtn">⚖️ Föreslå reform</button>' : ''}</div></div>`;
-  const tabs = h('div', { class: 'tabs' });
-  for (const [id, name] of Object.entries(DOMAINS)) tabs.append(h('button', { class: id === tab ? 'on' : '', onclick: () => ui.render('politik', id) }, name));
+  // domänflikarna i grupper; siffran = antal områden, punkten = reformer på gång i domänen
+  const tabs = h('div', { class: 'tabs domtabs' });
+  for (const g of DOMAIN_GROUPS) {
+    const row = h('div', { class: 'dgb' });
+    for (const id of g.ids) {
+      const pols = POLICIES.filter((x) => x.domain === id);
+      const diff = pols.filter((x) => Math.abs(norm(x, p.program?.[x.id] ?? x.def) - norm(x, law[x.id] ?? x.def)) > .15).length;
+      const busy = pols.some((x) => (s.reforms || []).some((r) => r.policyId === x.id && r.progress < 1) || s.riksdag.bills.some((b) => b.kind === 'reform' && b.policyId === x.id && b.status === 'pending'));
+      row.append(h('button', { class: id === tab ? 'on' : '', title: `${pols.length} områden · ert program skiljer sig från lagen i ${diff}${busy ? ' · reformer på gång' : ''}`, onclick: () => ui.render('politik', id) }, DOMAINS[id], h('small', {}, ' ' + pols.length), busy ? h('i', { class: 'dgd' }) : ''));
+    }
+    tabs.append(h('div', { class: 'dgl' }, g.name), row);
+  }
   el.append(tabs);
   const changes = {};
   const list = h('div', { class: 'list' });
@@ -69,8 +79,10 @@ export function reformPicker(s, run, modal, choice) {
   const p = me(s);
   return new Promise(async (resolve) => {
     const pm = isPlayerPM(s);
-    const domIdx = await choice({ title: 'Föreslå reform – område', text: 'Vilken domän?', choices: Object.entries(DOMAINS).map(([id, name]) => ({ label: name, desc: POLICIES.filter((x) => x.domain === id).length + ' områden' })), wide: true });
-    const dom = Object.keys(DOMAINS)[domIdx];
+    const doms = DOMAIN_GROUPS.flatMap((g) => g.ids.map((id) => ({ id, group: g.name })));
+    const domIdx = await choice({ title: 'Föreslå reform – område', text: 'Vilken domän?', choices: doms.map((d) => ({ label: DOMAINS[d.id], desc: `${d.group} · ${POLICIES.filter((x) => x.domain === d.id).length} områden` })), wide: true });
+    if (domIdx == null || !doms[domIdx]) { resolve(); return; }
+    const dom = doms[domIdx].id;
     const pols = POLICIES.filter((x) => x.domain === dom && !(s.reforms || []).some((r) => r.policyId === x.id && r.progress < 1) && !s.riksdag.bills.some((b) => b.kind === 'reform' && b.policyId === x.id && b.status === 'pending'));
     if (!pols.length) { resolve(); return; }
     const pi = await choice({ title: 'Föreslå reform – område', text: 'Vilket område?', choices: pols.map((x) => ({ label: x.name, desc: `lag: ${policyLabel(x, s.policy[x.id])} · vårt program: ${policyLabel(x, p.program?.[x.id] ?? x.def)}${x.konst ? ' · grundlag' : ''}` })), wide: true });

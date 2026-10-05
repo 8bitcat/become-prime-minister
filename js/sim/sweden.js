@@ -54,6 +54,7 @@ export function stepMonth(state, rnd) {
   const n = (ms) => gauss(rnd, 0, ms);
   const glide = (id, target, rate, noise = 0) => { s[id] = s[id] + (target - s[id]) * rate + (noise ? n(noise) : 0); };
   sw.priceIndex ||= 1;
+  for (const st of STATS) if (!st.derived && s[st.id] == null) s[st.id] = st.init; // nya mätserier i äldre sparningar
 
   // --- omvärlden: konjunkturcykel + chocker (energi, finans) ---
   w.cycle = (w.cycle + 1 / 84) % 1;
@@ -80,13 +81,13 @@ export function stepMonth(state, rnd) {
   const g = s.bnp_tillvaxt;
   s.bnp *= 1 + (g + s.inflation) / 100 / 12;
   glide('produktivitet', 1.2 + (s.utg_utbildning / sw.priceIndex - 420) * .002 + (s.digitalisering - 78) * .01 + (s.hogskoleutbildade - 45) * .01 + f('produktivitet'), .05, .05);
-  glide('investeringar', 25 + (g - 1.5) * .6 - (ran - 2.25) * .8 + f('investeringar'), .06, .1);
+  glide('investeringar', 25 + (g - 1.5) * .6 - (ran - 2.25) * .8 + (s.direktinvesteringar - 170) * .002 + f('investeringar'), .06, .1);
   glide('konjunktur', 100 + (g - 1.8) * 6 - (s.inflation - 2) * 2, .15, 1.2);
   glide('konsumentfortroende', 95 + (g - 1.8) * 4 - (s.inflation - 2) * 3 - (s.arbetsloshet - 8.2) * 2 + (s.reallon) * 2 - (s.oro - 50) * .2, .15, 1.5);
   glide('borsindex', s.borsindex * (1 + (g - 1.5) * .003 + (worldGrowth - 2) * .002 - (ran - 2.25) * .003), .5, s.borsindex * .02);
   glide('export', s.export * (1 + (worldGrowth - 1) / 100 / 12 + (11.2 - s.kronkurs_eur) * .003) * (1 + f('export') / 12), .5, s.export * .004);
   glide('import', s.import * (1 + g / 100 / 12), .5, s.import * .004);
-  glide('nystartade_foretag', 70 + (g - 1.8) * 3 + f('nystart'), .08, 1);
+  glide('nystartade_foretag', 70 + (g - 1.8) * 3 + (s.foretagsklimat - 62) * .2 + f('nystart'), .08, 1);
   glide('konkurser', 8 - (g - 1.8) * .8 + (ran - 2.25) * .5 + f('konkurser'), .1, .15);
 
   // --- inflation & Riksbanken ---
@@ -107,7 +108,7 @@ export function stepMonth(state, rnd) {
   const wageGrowth = (s.inflation + s.produktivitet + (s.fackanslutning - 68) * .01) / 100 / 12;
   s.medianlon *= 1 + wageGrowth; s.medellon *= 1 + wageGrowth * 1.05;
   glide('reallon', s.produktivitet + (s.fackanslutning - 68) * .01 - (s.inflation - 2) * .2, .1, .08);
-  glide('lonegap', 9.5 - (s.jamstalldhet - 85) * .15 + f('lonegap'), .05, .03);
+  glide('lonegap', 9.5 - (s.jamstalldhet - 85) * .15 - (s.pappadagar - 31) * .05 + f('lonegap'), .05, .03);
   glide('fackanslutning', 68 + f('fackanslutning'), .02, .1);
   glide('strejkdagar', 5 + (s.inflation > 4 ? 10 : 0) + f('strejk'), .1, .8);
   glide('arbetskraftsinvandring', (18 + (g - 1.8) * 1.5) * (fx.arbetskraftMult || 1), .08, .4);
@@ -139,39 +140,39 @@ export function stepMonth(state, rnd) {
   glide('andel_utrikes_fodda', s.andel_utrikes_fodda + ((s.invandring - s.utvandring) / 12) / s.befolkning * 100 * .8, 1);
   glide('andel_65plus', s.andel_65plus + .012 - (s.fodelsetal - 10.2) * .002, 1);
   glide('medianalder', 41.3 + (s.andel_65plus - 20.6) * .5, .05);
-  glide('medellivslangd', 83.4 + (s.vardkvalitet - 72) * .03 - (s.fattigdom - 14) * .02 + (sw.months / 12) * .08 + f('medellivslangd'), .03, .01);
+  glide('medellivslangd', 83.4 + (s.vardkvalitet - 72) * .03 - (s.fattigdom - 14) * .02 + (sw.months / 12) * .08 - (s.alkoholkonsumtion - 8.3) * .05 - (s.rokare - 5.2) * .04 - (s.fetma - 16) * .03 - (s.trafikdodade - 205) * .0005 + f('medellivslangd'), .03, .01);
   glide('urbanisering', 88 + .01 + f('urban'), .05);
 
   // --- välfärd ---
   const vardReal = s.utg_sjukvard / sw.priceIndex / demo;
-  glide('vardkoer', 95 * Math.pow(560 / Math.max(300, vardReal), 1.3) + (s.lakare < 4.3 ? 20 : 0) - (s.digitalisering - 78) * .5 + f('vardkoer'), .06, 1.5);
+  glide('vardkoer', 95 * Math.pow(560 / Math.max(300, vardReal), 1.3) + (s.lakare < 4.3 ? 20 : 0) - (s.digitalisering - 78) * .5 + (s.fetma - 16) * .4 - (s.kommunresultat - 12) * .05 + f('vardkoer'), .06, 1.5);
   glide('vardkvalitet', 72 + (vardReal - 560) * .04 + (s.sjukskoterskor - 10.9) * 2 - (s.vardkoer - 95) * .05 + f('vardkvalitet'), .05, .4);
   glide('vardplatser', 2 + (vardReal - 560) * .002, .04, .01);
   glide('lakare', 4.3 + (vardReal - 560) * .002 + (s.hogskoleutbildade - 45) * .01, .03, .01);
   glide('sjukskoterskor', 10.9 + (vardReal - 560) * .006 + (s.medianlon / (34500 * sw.priceIndex) - 1) * 2 + f('sjukskoterskor'), .03, .02);
-  glide('psykisk_ohalsa', 60 + (s.arbetsloshet - 8.2) * 1.5 + (s.oro - 50) * .3 - (vardReal - 560) * .03 + (s.ungdomsarbetsloshet - 22) * .3 + f('psykisk'), .04, .4);
+  glide('psykisk_ohalsa', 60 + (s.arbetsloshet - 8.2) * 1.5 + (s.oro - 50) * .3 - (vardReal - 560) * .03 + (s.ungdomsarbetsloshet - 22) * .3 + (s.spelproblem - 4) * .5 - (s.idrottsaktiva - 60) * .1 + (s.ensamhet_aldre - 13) * .2 + f('psykisk'), .04, .4);
   const utbReal = s.utg_utbildning / sw.priceIndex;
   glide('larartathet', 12 - (utbReal - 420) * .01 + f('larartathet'), .04, .03);
   glide('behoriga_larare', 70 + (utbReal - 420) * .05 + f('behoriga'), .03, .2);
-  glide('skolresultat', 490 + (utbReal - 420) * .12 + (s.behoriga_larare - 70) * .6 - (s.larartathet - 12) * 3 - (s.integration < 55 ? (55 - s.integration) * .4 : 0) + (s.friskoleandel - 17) * -.1 + f('skola'), .025, .5);
+  glide('skolresultat', 490 + (utbReal - 420) * .12 + (s.behoriga_larare - 70) * .6 - (s.larartathet - 12) * 3 - (s.integration < 55 ? (55 - s.integration) * .4 : 0) + (s.friskoleandel - 17) * -.1 - (s.barngrupper - 15) * .5 + f('skola'), .025, .5);
   glide('gymnasiebehorighet', 85 + (s.skolresultat - 490) * .15, .05, .1);
   glide('hogskoleutbildade', 45 + (s.skolresultat - 490) * .05 + .03 * (sw.months / 12) + f('hogskola'), .03, .03);
   glide('friskoleandel', 17 + f('friskole'), .02, .05);
   glide('forskoleplatser', 86 + (utbReal - 420) * .02, .03, .05);
-  glide('aldreomsorg_kvalitet', 68 + (s.utg_aldreomsorg / sw.priceIndex / demo - 180) * .3 + (s.sjukskoterskor - 10.9) * 2 + f('aldre'), .05, .4);
+  glide('aldreomsorg_kvalitet', 68 + (s.utg_aldreomsorg / sw.priceIndex / demo - 180) * .3 + (s.sjukskoterskor - 10.9) * 2 + (s.kommunresultat - 12) * .05 + f('aldre'), .05, .4);
   glide('pensionsniva', 55 + (s.utg_pensioner / sw.priceIndex / demo - 480) * .05 + f('pensionsniva'), .05, .1);
 
   // --- brott ---
   const polReal = s.utg_polis / sw.priceIndex;
   glide('poliser', 23000 + (polReal - 50) * 700, .04, 60);
-  const gangTarget = 70 + (s.arbetsloshet - 8.2) * 2 + (s.gini - .31) * 120 + (s.ungdomsarbetsloshet - 22) * .5 - (s.poliser - 23000) / 400 - (s.integration - 55) * .4 - (s.uppklarning - 15) * .8 - (s.utg_socialt / sw.priceIndex - 700) * .01 - (s.skolresultat - 490) * .15 + f('gang') + f('aterfall') * 2;
+  const gangTarget = 70 + (s.arbetsloshet - 8.2) * 2 + (s.gini - .31) * 120 + (s.ungdomsarbetsloshet - 22) * .5 - (s.poliser - 23000) / 400 - (s.integration - 55) * .4 - (s.uppklarning - 15) * .8 - (s.utg_socialt / sw.priceIndex - 700) * .01 - (s.skolresultat - 490) * .15 - (s.idrottsaktiva - 60) * .1 + f('gang') + f('aterfall') * 2;
   glide('gang_index', gangTarget, .04, 1);
   glide('skjutningar', 320 * s.gang_index / 70, .1, 12);
   glide('dodligt_vald', 110 * Math.pow(s.gang_index / 70, 1.2), .1, 5);
   glide('sprangningar', 90 * Math.pow(s.gang_index / 70, 1.5), .1, 6);
-  glide('valdsbrott', 95 * (.7 + .3 * s.gang_index / 70) + f('valdsbrott'), .08, 1.5);
+  glide('valdsbrott', 95 * (.7 + .3 * s.gang_index / 70) + (s.alkoholkonsumtion - 8.3) * 1.5 + f('valdsbrott'), .08, 1.5);
   glide('anmalda_brott', 1500 + (s.gang_index - 70) * 4 + (s.arbetsloshet - 8.2) * 15 - (s.poliser - 23000) / 100, .08, 12);
-  glide('bedragerier', 250 + .3 * (sw.months) - (s.digitalisering - 78) * 2 - (s.poliser - 23000) / 200, .08, 5);
+  glide('bedragerier', 250 + .3 * (sw.months) - (s.digitalisering - 78) * 2 - (s.poliser - 23000) / 200 + (s.itincidenter - 1100) * .01 + f('bedrageri'), .08, 5);
   glide('narkotikadodsfall', 600 + (s.gang_index - 70) * 3 + (s.psykisk_ohalsa - 60) * 4 + f('narko'), .06, 12);
   glide('uppklarning', 15 + (s.poliser - 23000) / 800 + (s.digitalisering - 78) * .05 + (s.utg_rattsvasende / sw.priceIndex - 60) * .05 + f('uppklarning'), .05, .15);
   glide('straffniva', 14 + f('straff'), .05, .1);
@@ -182,7 +183,7 @@ export function stepMonth(state, rnd) {
 
   // --- klimat & energi ---
   const klimReal = s.utg_klimat / sw.priceIndex;
-  const redAnnual = 2.2 + (klimReal - 30) * .05 + (s.elbilar - 60) * .02 + f('utslappRed');
+  const redAnnual = 2.2 + (klimReal - 30) * .05 + (s.elbilar - 60) * .02 + (s.kollektivandel - 27) * .03 - (s.flygpassagerare - 35) * .02 + (s.godsjarnvag - 22) * .02 + f('utslappRed');
   s.utslapp *= 1 - clamp(redAnnual, -4, 10) / 100 / 12;
   glide('elbilar', 60 + (s.elpris < 100 ? 3 : -3) + sw.months * .08 + f('elbilar'), .05, .5);
   glide('elanvandning', 140 + (g - 1.5) * 2 + (s.elbilar - 60) * .15 + (sw.months / 12) * 2.5, .05, .4);
@@ -203,10 +204,10 @@ export function stepMonth(state, rnd) {
   const forsReal = s.utg_forsvar / sw.priceIndex;
   glide('soldater', 25000 + (forsReal - 130) * 90 + f('soldater'), .02, 40);
   glide('varnpliktiga', 8000 + (forsReal - 130) * 60 + f('varnpliktiga'), .03, 30);
-  glide('hemvarn', 22000 + (forsReal - 130) * 40, .02, 30);
+  glide('hemvarn', 22000 + (forsReal - 130) * 40 + f('hemvarn'), .02, 30);
   glide('stridsflyg', 95 + (forsReal - 130) * .15, .01, 0);
   glide('militar_styrka', 62 + (forsReal - 130) * .18 + (s.soldater - 25000) / 500 + f('militar'), .025, .3);
-  glide('beredskap', 55 + (forsReal - 130) * .1 + (s.klimatanpassning - 50) * .2 + (s.civilsamhalle - 70) * .1 + f('beredskap'), .03, .3);
+  glide('beredskap', 55 + (forsReal - 130) * .1 + (s.klimatanpassning - 50) * .2 + (s.civilsamhalle - 70) * .1 + (s.sjalvforsorjning - 50) * .1 + (s.forsorjningsberedskap - 35) * .15 + (s.skyddsrumsplatser - 7) * .8 + (s.civilpliktiga - 3000) / 2500 + f('beredskap'), .03, .3);
   glide('cyberforsvar', 60 + (forsReal - 130) * .08 + (s.digitalisering - 78) * .3 + f('cyber'), .03, .3);
   glide('sakerhetslage', 65 + (w.tension || 0) + f('sakerhet'), .05, 1);
   glide('terrorhot', clamp(Math.round(4 + (s.extremism - 20) / 15 + f('terror')), 1, 5), .2);
@@ -223,7 +224,7 @@ export function stepMonth(state, rnd) {
   const infReal = s.utg_infrastruktur / sw.priceIndex;
   glide('tagpunktlighet', 90 + (infReal - 110) * .05 + f('tag'), .05, .4);
   glide('vagstandard', 65 + (infReal - 110) * .15 + f('vag'), .03, .3);
-  glide('bredband', 95 + (infReal - 110) * .01 + .02, .05, .02);
+  glide('bredband', Math.min(100, 95 + (infReal - 110) * .01 + .02 + f('bredband')), .05, .02);
   glide('kollektivtrafik', 70 + (infReal - 110) * .1 + f('kollektiv'), .03, .3);
   glide('digitalisering', 78 + (sw.months / 12) * 1.2 + f('digital'), .03, .2);
 
@@ -232,24 +233,71 @@ export function stepMonth(state, rnd) {
   glide('fortroende_regering', 42 + (state.government.approval - 45) * .6 - scandalLoad * .3, .15, .8);
   glide('fortroende_riksdag', 48 - (s.polarisering - 45) * .3 - scandalLoad * .15 + (state.riksdag.passedRecently || 0) * .5 + f('fortroendeRiksdag'), .08, .6);
   glide('fortroende_polis', 66 + (s.trygghet - 60) * .4 - (s.gang_index - 70) * .2 + f('fortroendePolis'), .06, .5);
-  glide('fortroende_medier', 52 - (s.polarisering - 45) * .3 + f('fortroendeMedier'), .04, .4);
-  glide('korruption', 83 - scandalLoad * .2 + (s.rattssakerhet - 88) * .3 + f('korruption'), .05, .3);
+  glide('fortroende_medier', 52 - (s.polarisering - 45) * .3 - (s.medieskugga - 40) * .02 + f('fortroendeMedier'), .04, .4);
+  glide('korruption', 83 - scandalLoad * .2 + (s.rattssakerhet - 88) * .3 - (s.medieskugga - 40) * .03 + f('korruption'), .05, .3);
   glide('polarisering', 45 + (state.opinion.polarization || 0) + (s.gini - .31) * 40 + (s.oro - 50) * .2 + f('polarisering'), .06, .6);
   glide('extremism', 20 + (s.polarisering - 45) * .4 + (s.ungdomsarbetsloshet - 22) * .3 - (s.integration - 55) * .2 + f('extremism'), .05, .5);
   glide('protester', 10 + (s.polarisering - 45) * .3 + Math.max(0, s.inflation - 4) * 3 + (sw.protestBoost || 0) + f('protester'), .15, 1);
   sw.protestBoost = (sw.protestBoost || 0) * .8;
   glide('oro', 50 + (s.inflation - 2) * 3 + (s.arbetsloshet - 8.2) * 2 + (s.skjutningar - 320) * .05 + (tension - 65) * .3 - (s.konsumentfortroende - 95) * .2 + f('oro') + f('landsbygdOro') * .3, .1, .8);
   glide('integration', 55 - (s.asylsokande - 11.5) * .15 + (s.sysselsattning - 69) * .5 + (s.skolresultat - 490) * .1 + f('integration'), .03, .3);
-  glide('jamstalldhet', 85 + (s.forskoleplatser - 86) * .1 + f('jamstalldhet'), .03, .2);
-  glide('sammanhallning', 62 - (s.polarisering - 45) * .4 + (s.integration - 55) * .2 - (s.gini - .31) * 50 + (s.civilsamhalle - 70) * .1 + f('sammanhallning'), .04, .4);
-  glide('civilsamhalle', 70 + (s.utg_kultur / sw.priceIndex - 25) * .3 - (s.arbetsloshet - 8.2) * .5, .03, .3);
+  glide('jamstalldhet', 85 + (s.forskoleplatser - 86) * .1 + (s.pappadagar - 31) * .1 + f('jamstalldhet'), .03, .2);
+  glide('sammanhallning', 62 - (s.polarisering - 45) * .4 + (s.integration - 55) * .2 - (s.gini - .31) * 50 + (s.civilsamhalle - 70) * .1 + (s.kulturdeltagande - 60) * .05 + f('sammanhallning'), .04, .4);
+  glide('civilsamhalle', 70 + (s.utg_kultur / sw.priceIndex - 25) * .3 - (s.arbetsloshet - 8.2) * .5 + (s.kulturdeltagande - 60) * .05 + (s.idrottsaktiva - 60) * .05 + f('civil'), .03, .3);
   glide('rattssakerhet', 88 + f('rattssakerhet') + (sw.rattssakerhetMal != null ? sw.rattssakerhetMal - 88 : 0), .04, .2);
   glide('yttrandefrihet', 92 + f('yttrande') + (sw.yttrandefrihetMal != null ? sw.yttrandefrihetMal - 92 : 0), .04, .2);
   glide('pressfrihet', 90 + f('press') - (s.polarisering - 45) * .1 + (sw.pressfrihetMal != null ? sw.pressfrihetMal - 90 : 0), .04, .2);
   glide('demokratiindex', 9.3 + f('demokrati') + (sw.demokratiMal != null ? sw.demokratiMal - 9.3 : 0) - (s.korruption < 75 ? .2 : 0) - (s.pressfrihet < 80 ? .3 : 0) - (s.rattssakerhet < 80 ? .3 : 0) - (s.extremism > 35 ? .2 : 0), .04, .01);
   glide('hdi', .952 + (s.medellivslangd - 83.4) * .004 + (s.hogskoleutbildade - 45) * .0006 + (s.bnp / sw.priceIndex / s.befolkning * 1000 / 601 - 1) * .02, .04, .0003);
-  glide('lycka', 7.3 + (s.konsumentfortroende - 95) * .01 - (s.arbetsloshet - 8.2) * .05 + (s.trygghet - 60) * .01 + (s.vardkvalitet - 72) * .01 - (s.oro - 50) * .01 + (s.sammanhallning - 62) * .008 + f('lycka'), .06, .02);
+  glide('lycka', 7.3 + (s.konsumentfortroende - 95) * .01 - (s.arbetsloshet - 8.2) * .05 + (s.trygghet - 60) * .01 + (s.vardkvalitet - 72) * .01 - (s.oro - 50) * .01 + (s.sammanhallning - 62) * .008 - (s.trafikdodade - 205) * .0005 + (s.kulturdeltagande - 60) * .003 + f('lycka'), .06, .02);
   glide('integritet', 75 + f('integritet'), .05, .3);
+
+  // --- barn & familj ---
+  glide('pappadagar', clamp(31 + f('pappor'), 5, 50), .03, .1);
+  glide('barngrupper', clamp(15 - (utbReal - 420) * .005 + f('barngrupp'), 8, 25), .04, .05);
+  glide('placerade_barn', Math.max(5, 33 + (s.barnfattigdom - 9) * .8 + (s.gang_index - 70) * .05 + (s.psykisk_ohalsa - 60) * .05 + f('placerade')), .04, .2);
+  // --- folkhälsa ---
+  glide('alkoholkonsumtion', clamp(8.3 + (s.reallon - 1) * .05 + f('alkohol'), 3, 16), .04, .03);
+  glide('rokare', clamp(5.2 - (sw.months / 12) * .15 + f('rokning'), .5, 30), .03, .03);
+  glide('spelproblem', clamp(4 + f('spel'), .5, 15), .04, .03);
+  glide('fetma', clamp(16 + (s.fattigdom - 14) * .1 - (s.idrottsaktiva - 60) * .05 + (sw.months / 12) * .1 + f('fetma'), 5, 40), .02, .03);
+  glide('suicid', clamp(1250 + (s.psykisk_ohalsa - 60) * 12 + (s.arbetsloshet - 8.2) * 15 + (s.alkoholkonsumtion - 8.3) * 20 + f('suicid'), 400, 3000), .05, 15);
+  glide('vaccinationsgrad', clamp(97 - (s.polarisering - 45) * .02 + f('vaccin'), 70, 99.5), .05, .05);
+  // --- kultur & idrott ---
+  const kultReal = s.utg_kultur / sw.priceIndex;
+  glide('kulturdeltagande', clamp(60 + (kultReal - 25) * .4 + f('kultur'), 20, 95), .04, .3);
+  glide('idrottsaktiva', clamp(60 + (kultReal - 25) * .15 - (s.barnfattigdom - 9) * .3 + f('idrott'), 25, 90), .04, .3);
+  glide('folkbibliotek', Math.max(200, 1100 + (kultReal - 25) * 5 + f('bibliotek')), .03, 3);
+  glide('medieskugga', clamp(40 + f('medieskugga'), 0, 290), .03, .5);
+  // --- transporter ---
+  glide('kollektivandel', clamp(27 + (s.kollektivtrafik - 70) * .2 + (s.bensinpris - 17.5) * .3 + f('kollandel'), 5, 70), .04, .2);
+  glide('trafikdodade', clamp(205 - (s.vagstandard - 65) - (s.kollektivandel - 27) * 1.5 + f('trafikdod'), 30, 800), .05, 4);
+  glide('flygpassagerare', clamp(35 + (g - 1.8) * .8 + f('flyg'), 5, 80), .05, .3);
+  glide('godsjarnvag', clamp(22 + (s.tagpunktlighet - 90) * .2 + f('godsjv'), 5, 60), .03, .2);
+  // --- jordbruk, skog & natur ---
+  const lantTrend = 57 - (sw.months / 12) * .4; // strukturomvandlingen: färre men större gårdar
+  glide('lantbruksforetag', Math.max(10, lantTrend + f('lantbruk')), .03, .1);
+  glide('sjalvforsorjning', clamp(50 + (s.lantbruksforetag - lantTrend) * .4 + f('sjalvf'), 15, 120), .03, .2);
+  glide('ekologisk_mark', clamp(19 + f('eko'), 2, 80), .03, .1);
+  glide('djurvalfard', clamp(80 + f('djur'), 20, 100), .04, .2);
+  glide('havsmiljo', clamp(40 + (klimReal - 30) * .1 - (s.utslapp - 45) * .2 + f('hav'), 5, 95), .02, .3);
+  glide('fiskbestand', clamp(35 + (s.havsmiljo - 40) * .5 + f('fisk'), 3, 100), .02, .4);
+  glide('vargstam', clamp(300 + f('varg'), 0, 2000), .05, 6);
+  glide('rodlistade', clamp(4750 - (s.skyddad_natur - 15) * 30 + (s.skogsavverkning - 90) * 8 + f('rodlista'), 2000, 8000), .02, 10);
+  // --- hushåll, finans & näringsliv ---
+  glide('overskuldsatta', clamp(415 + (s.fattigdom - 14) * 8 + (s.styrranta - 2.25) * 10 + (s.arbetsloshet - 8.2) * 8 + f('overskuld'), 100, 1200), .04, 2);
+  glide('foretagsklimat', clamp(62 + (s.konjunktur - 100) * .2 - (s.skattekvot - 42) * .8 + f('foretag'), 10, 100), .05, .4);
+  glide('direktinvesteringar', Math.max(-50, 170 + (s.foretagsklimat - 62) * 3 + (g - 1.8) * 10 + f('fdi')), .08, 6);
+  glide('kommunresultat', 12 + (g - 1.8) * 4 - (s.andel_65plus - 20.6) * 3 + f('kommunekonomi'), .1, 1);
+  // --- beredskap & it-säkerhet ---
+  glide('itincidenter', Math.max(100, 1100 * (1 + (s.sakerhetslage - 65) * .01) - (s.cyberforsvar - 60) * 15 + (s.digitalisering - 78) * 5 + f('itincident')), .06, 25);
+  glide('skyddsrumsplatser', clamp(7 + f('skyddsrum'), 0, 12), .01, .01);
+  glide('forsorjningsberedskap', clamp(35 + (s.sjalvforsorjning - 50) * .3 + f('forsorjning'), 0, 100), .03, .3);
+  glide('civilpliktiga', Math.max(0, 3000 + f('civilplikt')), .03, 30);
+  // --- äldre & digitalt utanförskap ---
+  glide('pensionarsfattigdom', clamp(15.5 + (s.fattigdom - 14) * .5 - (s.pensionsniva - 55) * .3 + f('aldrefattig'), 2, 50), .04, .1);
+  glide('ensamhet_aldre', clamp(13 - (s.aldreomsorg_kvalitet - 68) * .05 - (s.civilsamhalle - 70) * .05 + f('ensamhet'), 2, 40), .03, .1);
+  glide('digitalt_utanforskap', clamp(5.5 - (sw.months / 12) * .15 + f('digutanf'), .5, 25), .03, .05);
 
   // --- regioner ---
   for (const r of REGIONS) {

@@ -5,6 +5,7 @@ export const CATS = {
   befolkning: 'Befolkning', ekonomi: 'Ekonomi', offentligt: 'Offentliga finanser', skatter: 'Skatter', utgifter: 'Statens utgifter',
   arbete: 'Arbetsmarknad', valfard: 'Vård, skola & omsorg', brott: 'Brott & rättsväsende', klimat: 'Klimat & energi', forsvar: 'Försvar & säkerhet',
   bostad: 'Bostäder & infrastruktur', samhalle: 'Samhälle & demokrati',
+  familj: 'Barn & familj', halsa: 'Folkhälsa', kultur: 'Kultur & idrott', transport: 'Transporter', areella: 'Jordbruk, skog & natur', finans: 'Hushåll & näringsliv',
 };
 const S = (id, name, unit, d, cat, init, good = null, extra = {}) => ({ id, name, unit, d, cat, init, good, ...extra });
 export const STATS = [
@@ -54,6 +55,7 @@ export const STATS = [
   S('statens_inkomster', 'Offentliga inkomster', 'mdkr/år', 0, 'offentligt', 3136, 'up'),
   S('statens_utgifter', 'Offentliga utgifter', 'mdkr/år', 0, 'offentligt', 3156),
   S('rantekostnad', 'Räntekostnad på skulden', 'mdkr/år', 0, 'offentligt', 28, 'down', { derived: (s) => (s.statsskuld * (s.styrranta + 0.6)) / 100 }),
+  S('kommunresultat', 'Kommunsektorns resultat', 'mdkr/år', 0, 'offentligt', 12, 'up'),
   // --- skatter (politik) ---
   S('skatt_kommunal', 'Kommunalskatt (snitt)', '%', 2, 'skatter', 32.37),
   S('skatt_statlig', 'Statlig inkomstskatt', '%', 0, 'skatter', 20),
@@ -111,6 +113,8 @@ export const STATS = [
   S('a_kassa', 'A-kassa (tak)', 'kr/dag', 0, 'valfard', 1200),
   S('forskoleplatser', 'Barn i förskola', '%', 1, 'valfard', 86.0, 'up'),
   S('friskoleandel', 'Elever i friskola', '%', 1, 'valfard', 17.0),
+  S('pensionarsfattigdom', 'Fattigdom bland pensionärer', '%', 1, 'valfard', 15.5, 'down'),
+  S('ensamhet_aldre', 'Ofrivilligt ensamma äldre', '%', 1, 'valfard', 13.0, 'down'),
   // --- brott & rättsväsende ---
   S('anmalda_brott', 'Anmälda brott', 'tusen/år', 0, 'brott', 1500, 'down'),
   S('valdsbrott', 'Våldsbrott', 'tusen/år', 0, 'brott', 95, 'down'),
@@ -158,6 +162,10 @@ export const STATS = [
   S('cyberforsvar', 'Cyberförsvar', 'index', 0, 'forsvar', 60, 'up'),
   S('terrorhot', 'Terrorhotnivå', '1–5', 0, 'forsvar', 4, 'down'),
   S('sakerhetslage', 'Säkerhetsläge i närområdet', 'index', 0, 'forsvar', 65, 'down'),
+  S('itincidenter', 'Rapporterade IT-incidenter', 'antal/år', 0, 'forsvar', 1100, 'down'),
+  S('skyddsrumsplatser', 'Skyddsrumsplatser', 'miljoner', 1, 'forsvar', 7.0, 'up'),
+  S('forsorjningsberedskap', 'Försörjningsberedskap', 'index', 0, 'forsvar', 35, 'up'),
+  S('civilpliktiga', 'Civilpliktiga i tjänst', 'antal', 0, 'forsvar', 3000, 'up'),
   // --- bostäder & infrastruktur ---
   S('bostadspriser', 'Bostadspriser', 'index', 0, 'bostad', 100),
   S('bostadspris_tillvaxt', 'Bostadsprisutveckling', '%/år', 1, 'bostad', 3.0),
@@ -193,6 +201,41 @@ export const STATS = [
   S('yttrandefrihet', 'Yttrandefrihet', 'index', 0, 'samhalle', 92, 'up'),
   S('civilsamhalle', 'Föreningsliv & civilsamhälle', 'index', 0, 'samhalle', 70, 'up'),
   S('integritet', 'Personlig integritet', 'index', 0, 'samhalle', 75, 'up'),
+  S('digitalt_utanforskap', 'Digitalt utanförskap', '% av vuxna', 1, 'samhalle', 5.5, 'down'),
+  // --- barn & familj ---
+  S('pappadagar', 'Föräldradagar som tas ut av pappor', '%', 1, 'familj', 31.0, 'up'),
+  S('barngrupper', 'Barn per grupp i förskolan', 'st', 1, 'familj', 15.0, 'down'),
+  S('placerade_barn', 'Barn och unga placerade utanför hemmet', 'tusen/år', 1, 'familj', 33.0, 'down'),
+  // --- folkhälsa ---
+  S('alkoholkonsumtion', 'Alkoholkonsumtion', 'liter ren alkohol/inv 15+', 1, 'halsa', 8.3, 'down'),
+  S('rokare', 'Dagligrökare', '%', 1, 'halsa', 5.2, 'down'),
+  S('spelproblem', 'Problemspelande', '%', 1, 'halsa', 4.0, 'down'),
+  S('fetma', 'Fetma bland vuxna', '%', 1, 'halsa', 16.0, 'down'),
+  S('suicid', 'Självmord', 'antal/år', 0, 'halsa', 1250, 'down'),
+  S('vaccinationsgrad', 'Vaccinationsgrad barn', '%', 1, 'halsa', 97.0, 'up'),
+  // --- kultur & idrott ---
+  S('kulturdeltagande', 'Kulturdeltagande', 'index', 0, 'kultur', 60, 'up'),
+  S('idrottsaktiva', 'Barn och unga i idrottsförening', '%', 0, 'kultur', 60, 'up'),
+  S('folkbibliotek', 'Folkbibliotek', 'antal', 0, 'kultur', 1100, 'up'),
+  S('medieskugga', 'Kommuner i medieskugga', 'av 290', 0, 'kultur', 40, 'down'),
+  // --- transporter ---
+  S('trafikdodade', 'Trafikdödade', 'antal/år', 0, 'transport', 205, 'down'),
+  S('kollektivandel', 'Kollektivtrafikens andel av resorna', '%', 1, 'transport', 27.0, 'up'),
+  S('flygpassagerare', 'Flygpassagerare', 'miljoner/år', 1, 'transport', 35.0),
+  S('godsjarnvag', 'Gods på järnväg', '% av godstransporterna', 1, 'transport', 22.0, 'up'),
+  // --- jordbruk, skog & natur ---
+  S('sjalvforsorjning', 'Självförsörjning av livsmedel', '%', 0, 'areella', 50, 'up'),
+  S('lantbruksforetag', 'Lantbruksföretag', 'tusen', 1, 'areella', 57.0, 'up'),
+  S('ekologisk_mark', 'Ekologisk åkermark', '%', 1, 'areella', 19.0, 'up'),
+  S('djurvalfard', 'Djurvälfärd', 'index', 0, 'areella', 80, 'up'),
+  S('havsmiljo', 'Havsmiljön i Östersjön', 'index', 0, 'areella', 40, 'up'),
+  S('fiskbestand', 'Fiskbestånd (torsk och strömming)', 'index', 0, 'areella', 35, 'up'),
+  S('vargstam', 'Vargar i Sverige', 'antal', 0, 'areella', 355),
+  S('rodlistade', 'Rödlistade arter', 'antal', 0, 'areella', 4750, 'down'),
+  // --- hushåll & näringsliv ---
+  S('overskuldsatta', 'Skuldsatta hos Kronofogden', 'tusen', 0, 'finans', 415, 'down'),
+  S('foretagsklimat', 'Företagsklimat', 'index', 0, 'finans', 62, 'up'),
+  S('direktinvesteringar', 'Utländska direktinvesteringar', 'mdkr/år', 0, 'finans', 170, 'up'),
 ];
 export const STAT_BY_ID = Object.fromEntries(STATS.map((s) => [s.id, s]));
 

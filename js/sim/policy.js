@@ -8,7 +8,8 @@ import { clamp, pick, gauss } from '../core/util.js';
 import { addNews } from './news.js';
 import { activeParties } from './opinion.js';
 
-export const DOMAIN_ISSUE = { migration: 'migration', skatter: 'ekonomi', ekonomi: 'ekonomi', arbete: 'arbete', valfard: 'valfard', socialt: 'ekonomi', utbildning: 'valfard', ratt: 'kriminal', frihet: 'varderingar', demokrati: 'varderingar', forsvar: 'forsvar', utrikes: 'eu', energi: 'energi', samhalle: 'bostad' };
+export const DOMAIN_ISSUE = { migration: 'migration', skatter: 'ekonomi', ekonomi: 'ekonomi', arbete: 'arbete', valfard: 'valfard', socialt: 'ekonomi', utbildning: 'valfard', ratt: 'kriminal', frihet: 'varderingar', demokrati: 'varderingar', forsvar: 'forsvar', utrikes: 'eu', energi: 'energi', samhalle: 'bostad',
+  familj: 'varderingar', halsa: 'valfard', kultur: 'varderingar', digitalt: 'ekonomi', transport: 'landsbygd', areella: 'landsbygd', natur: 'klimat', finans: 'ekonomi', naring: 'ekonomi', kommun: 'landsbygd', kris: 'forsvar', pension: 'valfard' };
 const TAX_IDS = new Set(['skatt_kommunal', 'skatt_statlig', 'skatt_bolag', 'skatt_kapital', 'moms', 'skatt_koldioxid', 'skatt_bensin', 'arbetsgivaravgift', 'rutrot']);
 const SET_IDS = new Set([...TAX_IDS, 'a_kassa', 'barnbidrag']);
 const statBacked = (p) => !!(p.budget || TAX_IDS.has(p.id)); // kostnaden fångas redan av budgetformeln
@@ -193,13 +194,17 @@ export function aiGovernmentReforms(state, rnd) {
   addNews(state, { outlet: pick(rnd, ['svt', 'dn', 'ekot']), headline: `Regeringen föreslår: ${reformTitle(p, to).toLowerCase()}`, body: `${p.desc || ''} Omröstning i riksdagen om tre veckor.`, tags: ['riksdag', DOMAIN_ISSUE[p.domain]], importance: 2 });
   return item;
 }
-// AI-partiernas program driver mot väljarnas ideal: nudga områden som drar åt rätt håll
+// AI-partiernas program driver mot väljarnas ideal: nudga områden som drar åt rätt håll.
+// Varje knuff väger mindre ju fler områden en axel har – antalet knuffar skalas därför mot hur många
+// områden axeln hade före utbyggnaden 2026, så att partiernas glidningstakt är oförändrad.
+const DRIFT_REF = { migration: 12, ekonomi: 62, kriminal: 12, klimat: 13, forsvar: 11, eu: 8, valfard: 15, landsbygd: 13, varderingar: 28, arbete: 14, bostad: 6, energi: 5 };
 export function aiProgramDrift(state, rnd, party, axisDelta) {
   if (!party.program) return;
   for (const ax in axisDelta) {
     const d = axisDelta[ax]; if (Math.abs(d) < .4) continue;
     const cands = POLICIES.filter((p) => p.axes?.[ax]);
-    for (let i = 0; i < 2 && cands.length; i++) {
+    const reps = Math.max(2, Math.round(2 * cands.length / (DRIFT_REF[ax] || cands.length)));
+    for (let i = 0; i < reps && cands.length; i++) {
       const p = pick(rnd, cands); const dir = Math.sign(d) * Math.sign(p.axes[ax]);
       const cur = party.program[p.id] ?? p.def;
       if (p.type === 'choice') { const opts = p.options.slice().sort((a, b) => a.v - b.v); const idx = opts.findIndex((o) => o.id === cur); const ni = clamp(idx + dir, 0, opts.length - 1); if (rnd() < .3) party.program[p.id] = opts[ni].id; }
