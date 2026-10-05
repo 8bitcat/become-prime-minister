@@ -16,6 +16,7 @@ export const STATS = [
   S('fruktsamhet', 'Fruktsamhet', 'barn/kvinna', 2, 'befolkning', 1.45, 'up'),
   S('invandring', 'Invandring', 'tusen/år', 0, 'befolkning', 85),
   S('utvandring', 'Utvandring', 'tusen/år', 0, 'befolkning', 62),
+  S('atervandring', 'Återvändande & återvandring', 'tusen/år', 1, 'befolkning', 8),
   S('asylsokande', 'Asylsökande', 'tusen/år', 1, 'befolkning', 11.5),
   S('nettomigration', 'Nettomigration', 'tusen/år', 0, 'befolkning', 23, null, { derived: (s) => s.invandring - s.utvandring }),
   S('medellivslangd', 'Medellivslängd', 'år', 1, 'befolkning', 83.4, 'up'),
