@@ -33,6 +33,13 @@ export const localModelInfo = () => (server ? { id: server.model, name: `${serve
 // ---------- OLLAMA PÅ DEN EGNA DATORN ----------
 const withTimeout = (ms) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms); return { signal: c.signal, done: () => clearTimeout(t) }; };
 const cleanUrl = (u) => String(u || DEFAULT_SERVER).trim().replace(/\/+$/, '').replace(/^(?!https?:\/\/)/, 'http://');
+// Chrome och Edge frågar om en webbplats får nå enheter i det lokala nätverket (även den egna datorn).
+// Har spelaren svarat nej blockeras anropen – det ska då stå hur man ändrar det.
+async function networkPermission() {
+  for (const name of ['local-network-access', 'loopback-network']) { try { return (await navigator.permissions.query({ name })).state; } catch { /* okänd i den här webbläsaren */ } }
+  return null;
+}
+const BLOCKED = 'Webbläsaren nekar spelet att nå din dator. Klicka på symbolen till vänster om adressfältet → Webbplatsinställningar → "Lokalt nätverk" → Tillåt, och ladda om sidan.';
 // Vilka modeller finns i Ollama? Kastar ett begripligt fel om servern inte svarar eller nekar spelet.
 export async function probeServer(url = DEFAULT_SERVER) {
   const u = cleanUrl(url); const to = withTimeout(4000);
@@ -44,6 +51,7 @@ export async function probeServer(url = DEFAULT_SERVER) {
     const models = (j.models || []).map((m) => ({ id: m.name, size: m.size, params: m.details?.parameter_size || '' })).filter((m) => !/embed|bge|minilm/i.test(m.id));
     return { url: u, models };
   } catch (e) {
+    if (e instanceof TypeError && typeof navigator !== 'undefined' && (await networkPermission()) === 'denied') throw new Error(BLOCKED);
     if (e.name === 'AbortError' || e instanceof TypeError) throw new Error(`Hittar ingen Ollama på ${u}. Är Ollama igång – och tillåter den ${typeof location !== 'undefined' ? location.origin : 'spelet'} (OLLAMA_ORIGINS)?`);
     throw e;
   } finally { to.done(); }

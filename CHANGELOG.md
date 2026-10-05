@@ -7,6 +7,9 @@ git-tagg (`v0.1.0` osv.).
 
 <!-- släpp: tools/release.mjs lägger nya versioner direkt under denna rad -->
 
+## [0.8.1] – 2026-10-06 – Tillåt lokalt nätverk
+- Ollama från spelets webbadress: Chrome och Edge frågar första gången om spelet får ansluta till enheter i ditt lokala nätverk (den egna datorn räknas dit). Dialogen säger nu att man ska svara Tillåt – och har man råkat neka står det exakt var inställningen ändras (symbolen vid adressfältet → Webbplatsinställningar → Lokalt nätverk).
+
 ## [0.8.0] – 2026-10-05 – Modellen på din egen dator
 - Spelets AI kan nu köras i Ollama på din egen dator i stället för i webbläsaren: större och snabbare modeller, fortfarande utan nyckel och utan att något lämnar datorn. Testat med Gemma 4 12B (förval – uppfattar nyanser bäst, t.ex. ironi, ca 4 sekunder per analys) och Qwen3.5 9B (snabbast, ca 2 sekunder). Båda klarar spelets analystest 8 av 8 och hela speltestet (staben, politik med egna ord, kommentarsfält, debatt) 9 av 9.
 - Anslut under ☰ Meny → Spelets AI → Sök modeller → Anslut, eller öppna spelet med ?ollama. Valet sparas och spelet ansluter av sig självt nästa gång. Svarar inte Ollama används webbläsarmodellen eller den inbyggda analysen. En annan dator i hemmet nås med ?ollama=http://datorns-adress:11434.
