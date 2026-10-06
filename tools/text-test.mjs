@@ -185,10 +185,23 @@ const mm = monthlyMinisters(state, rnd); ok(Array.isArray(mm), 'ministrar: måna
   const adv = fallbackAdvice(state, 'stab', 'Hur klarar vi spärren inför valet?', analyzeText('Hur klarar vi spärren inför valet?', ctx));
   ok(/spärren|%/.test(adv), 'staben: svar utan språkmodell bygger på läget');
   const { mapPolicyText, heuristicPolicyMap } = await import('../js/ai/policymap.js');
+  const { POLICY_BY_ID } = await import('../js/data/policies.js');
   const m1 = heuristicPolicyMap('Sänk bensinskatten. Höj skatten för de rikaste.', {});
   ok(m1.some((c) => c.id === 'skatt_bensin' && c.to < c.from) && m1.some((c) => c.id === 'skatt_statlig' && c.to > c.from), `politik med egna ord: ${m1.map((c) => c.id).join(', ')}`);
   const m2 = await mapPolicyText('Vi vill stänga gränsen och bygga ny kärnkraft.', {});
   ok(m2.via === 'regler' && m2.changes.length >= 2, `politik med egna ord utan AI: ${m2.changes.map((c) => c.id).join(', ')}`);
+  // riktningen: "skärp" är upp (inte "skär ned"), negation vänder, första riktningsordet gäller, dubbla = ×2
+  { const { POLICIES: PS } = await import('../js/data/policies.js'); const sp = PS.find((p) => /straffniv/i.test(p.name)); const f = (t) => heuristicPolicyMap(t, {}).find((c) => c.id === sp.id);
+    ok(f('Straffen är för låga – de måste skärpas.')?.to > sp.def, 'riktning: "straffen måste skärpas" höjer straffen');
+    ok(f('Vi vill ha hårdare straff för gängkriminella.')?.to > sp.def, 'riktning: "hårdare straff" höjer straffen');
+    ok(f('Sänk straffen, fängelser gör bara folk mer kriminella.')?.to < sp.def, 'riktning: "sänk straffen, … mer kriminella" sänker (första riktningsordet)');
+    ok(f('Vi ska inte skärpa straffen, det fungerar inte.')?.to < sp.def, 'riktning: "inte skärpa" vänder riktningen');
+    ok(f('Dubbla straffen för skjutningar.')?.to === Math.min(sp.max, sp.def * 2), 'riktning: "dubbla straffen" = ×2');
+    const fx = heuristicPolicyMap('Sänk straffen, fängelser gör bara folk mer kriminella.', {});
+    ok(!fx.some((c) => POLICY_BY_ID[c.id].type === 'choice' && POLICY_BY_ID[c.id].options.find((o) => o.id === c.to)?.x), 'ett ord som bara nämns väljer inte ett ytterlighetsalternativ ("fängelser" ≠ "avskaffa fängelserna")');
+    const fa = heuristicPolicyMap('Vi vill sänka straffen för unga och satsa på förebyggande arbete i stället.', {});
+    ok(!fa.some((c) => c.id === 'arbetsgivaravgift'), '"satsa på förebyggande arbete" höjer inte arbetsgivaravgiften');
+    ok(heuristicPolicyMap('Skatterna är för höga.', {}).every((c) => c.to <= c.from), '"för höga skatter" sänker'); }
   const { calendarWeek, fragestundQuestion, fragestundOutcome, SPEECH_EVENTS, eventSpeechOutcome } = await import('../js/sim/calendar.js');
   const { speechReactions } = await import('../js/ai/generate.js');
   const saveDate = { ...state.date }; state.date = { y: saveDate.y, m: 7, d: 1 };

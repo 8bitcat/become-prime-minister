@@ -33,9 +33,13 @@ ok((await page.locator('#aichip').textContent()).includes('AI'), 'AI-indikatorn 
 // --- staben ---
 await page.evaluate(() => window.BPM.UI.go('stab')); await sleep(400);
 await page.fill('.chatin textarea', 'Ärligt talat – hur ska vi ta oss över spärren innan valet? Vad är vår bästa fråga?');
+const tStab = Date.now();
 await page.click('.chatin .btn.gold');
+await page.waitForSelector('.aibusy:not([hidden])', { timeout: 5000 }).catch(() => {});
+ok(await page.locator('.aibusy:not([hidden]) .spin').count() === 1, `snurran syns medan AI:n arbetar ("${(await page.locator('.aibusy .t').textContent().catch(() => '')) || ''}")`);
 await page.waitForFunction(() => window.BPM.G.state.chats?.stab?.length >= 2, null, { timeout: 90000 });
 const ans = await page.evaluate(() => window.BPM.G.state.chats.stab.at(-1).text);
+console.log(`    (svarstid ${((Date.now() - tStab) / 1000).toFixed(1)} s)`);
 console.log('    stabschefen:', ans.slice(0, 300));
 ok(ans.length > 40 && !ans.includes('Starta spelets AI'), 'stabschefen svarar fritt med spelets AI');
 await shot('01-staben');

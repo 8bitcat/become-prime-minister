@@ -17,7 +17,7 @@ const CASES = [
 ];
 async function chat(model, messages, schema, max) {
   const t0 = Date.now();
-  const r = await fetch(URL_ + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, messages, stream: false, think: false, keep_alive: '30m', format: schema, options: { temperature: .1, top_p: .9, num_predict: max, num_ctx: 8192, ...(/gemma4/.test(model) ? { draft_num_predict: 0 } : {}) } }) });
+  const r = await fetch(URL_ + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, messages, stream: false, think: false, keep_alive: '30m', format: schema, options: { temperature: .1, top_p: .9, num_predict: max, num_ctx: 4096, ...(/gemma4/.test(model) ? { draft_num_predict: 0 } : {}) } }) });
   if (!r.ok) throw new Error(r.status + ' ' + (await r.text()).slice(0, 200));
   const j = await r.json();
   return { txt: j.message.content, ms: Date.now() - t0, tok: j.eval_count || 0, evalMs: (j.eval_duration || 0) / 1e6, promptTok: j.prompt_eval_count || 0 };

@@ -7,6 +7,12 @@ git-tagg (`v0.1.0` osv.).
 
 <!-- släpp: tools/release.mjs lägger nya versioner direkt under denna rad -->
 
+## [0.9.0] – 2026-10-06 – Snabb AI och snurra
+- Snabbare AI: nytt förval i Ollama är Gemma 4 E4B. Den klarar spelets analystest lika bra som de stora modellerna (8 av 8, rätt riktning på alla straffmeningar) men svarar på ca 1,5 sekunder och tar bara 3,4 GB grafikminne. De stora modellerna (Gemma 4 12B, Qwen3.5 9B) blev mycket långsamma – upp till minuter – när andra program som Chrome och Office använde grafikkortet, eftersom modellen då delvis kördes på processorn. Spelet byter automatiskt från det gamla förvalet och varnar om en vald modell inte får plats i grafikminnet. I webbläsaren är Qwen3.5 4B nu förval även på starka grafikkort.
+- Snurra medan spelets AI arbetar: överst på skärmen står vad den gör ("Läser vad du skrev", "Formulerar svar", "Tolkar din politik") och hur många sekunder det har gått, och i debatter, intervjuer och utfrågningar snurrar den i textrutan. Tar det över 20 sekunder föreslås en mindre modell.
+- Rättat: "politik med egna ord" tolkade "skärpa" som "skära ned" – "straffen måste skärpas" blev lägre straff. Nu gäller hårdare, strängare och skärpta som höjning, "inte skärpa" vänder riktningen, det första riktningsordet i meningen avgör, "dubbla straffen" fördubblar och "för höga skatter" sänker. Ett ord som bara nämns i en bisats ("fängelser gör folk mer kriminella") väljer inte längre ett ytterlighetsalternativ, och "satsa på förebyggande arbete" höjer inte arbetsgivaravgiften. Modellen har fått tydligare exempel på vad hårdare straff respektive förebyggande betyder.
+- Mindre minne och ingen trängsel: modellen i Ollama använder ett mindre arbetsminne (räcker för spelets texter), släpps ur grafikminnet efter 10 minuter utan användning, och om webbläsaren nekar anslutningen startas inte webbläsarmodellen ovanpå en Ollama-modell som redan ligger i grafikminnet.
+
 ## [0.8.1] – 2026-10-06 – Tillåt lokalt nätverk
 - Ollama från spelets webbadress: Chrome och Edge frågar första gången om spelet får ansluta till enheter i ditt lokala nätverk (den egna datorn räknas dit). Dialogen säger nu att man ska svara Tillåt – och har man råkat neka står det exakt var inställningen ändras (symbolen vid adressfältet → Webbplatsinställningar → Lokalt nätverk).
 

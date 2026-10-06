@@ -112,7 +112,11 @@ export function runDebate(state, rnd, opts) {
       setTimeout(() => ta.focus(), 50);
     });
     // "tänker…" i textrutan medan spelets AI läser och svarar
-    const thinking = (label) => { if (!label) return; nm.style.display = 'none'; txt.textContent = '💭 ' + label; nx.style.display = 'none'; };
+    const thinking = (label) => {
+      if (!label) return; nm.style.display = 'none'; nx.style.display = 'none';
+      txt.innerHTML = `<span class="spin"></span> ${esc(label)} <small class="tsec"></small>`;
+      const t0 = Date.now(); const iv = setInterval(() => { const el = txt.querySelector('.tsec'); if (!el) { clearInterval(iv); return; } const s = Math.round((Date.now() - t0) / 1000); el.textContent = s >= 2 ? s + ' s' : ''; }, 500);
+    };
     d.convo = [];
     const showEvidence = (text) => { const e = h('div', { class: 'evidence' }); e.innerHTML = `<b>Bevis</b>${esc(text)}`; view.append(e); setTimeout(() => e.remove(), skipAll ? 100 : 4000); };
     const expFor = (dom) => ({ aggressiv: 'angry', kansla: 'determined', humor: 'happy', undvikande: 'nervous', kampande: 'confident', saklig: 'confident' })[dom] || 'confident';

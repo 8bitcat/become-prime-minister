@@ -98,13 +98,28 @@ function renderShell() {
   app.append(game);
 }
 
+// Snurran: syns när spelets AI arbetar åt spelaren (inte för bakgrundsjobb), med vad den gör och hur länge
+let busyEl = null, busyTmr = null, busyHide = null;
+function paintBusy() {
+  const st = localStatus();
+  if (!busyEl) { busyEl = h('div', { class: 'aibusy', role: 'status', 'aria-live': 'polite', hidden: true }); busyEl.innerHTML = '<i class="spin"></i><span class="t"></span><b class="s"></b><small class="h"></small>'; document.body.append(busyEl); }
+  if (st.state === 'klar' && st.busy && !st.low) {
+    clearTimeout(busyHide); busyEl.hidden = false;
+    const tick = () => { const sec = Math.round((Date.now() - (st.since || Date.now())) / 1000); busyEl.querySelector('.t').textContent = (st.task || 'Tänker') + ' …'; busyEl.querySelector('.s').textContent = sec + ' s'; busyEl.querySelector('.h').textContent = sec >= 20 ? 'Långsamt? Välj en mindre modell under 🧠' : ''; };
+    tick(); clearInterval(busyTmr); busyTmr = setInterval(tick, 500);
+  } else { clearTimeout(busyHide); busyHide = setTimeout(() => { clearInterval(busyTmr); if (busyEl) busyEl.hidden = true; }, 250); }
+}
+document.addEventListener('bpm:localai', paintBusy);
 // AI-indikatorn i toppraden: avstängd / laddar 34 % / tänker / redo
 function paintAiChip(el) {
   if (!el) return;
   const st = localStatus();
   el.className = 'btn sm aichip ' + (st.state === 'klar' ? 'on' : st.state === 'laddar' ? 'load' : st.state === 'fel' ? 'err' : '');
-  el.textContent = st.state === 'klar' ? (st.busy ? '🧠 tänker …' : '🧠 AI') : st.state === 'laddar' ? `🧠 ${st.progress} %` : st.state === 'fel' ? '🧠 fel' : '🧠 av';
-  el.title = st.state === 'klar' ? (st.via === 'server' ? `Spelets AI körs i Ollama på din dator (${st.model}) – klicka för inställningar` : 'Spelets AI är igång – klicka för inställningar') : st.state === 'laddar' ? `Spelets AI laddas: ${st.text || ''}` : 'Spelets AI är avstängd – klicka för att starta';
+  el.innerHTML = '';
+  if (st.state === 'klar' && st.busy) el.append(h('i', { class: 'spin sm' }));
+  el.append(st.state === 'klar' ? (st.busy ? ' tänker …' : '🧠 AI') : st.state === 'laddar' ? `🧠 ${st.progress} %` : st.state === 'fel' ? '🧠 fel' : '🧠 av');
+  if (st.state === 'klar' && st.warn) el.classList.add('err');
+  el.title = st.state === 'klar' ? (st.warn ? st.warn : st.via === 'server' ? `Spelets AI körs i Ollama på din dator (${st.model}) – klicka för inställningar` : 'Spelets AI är igång – klicka för inställningar') : st.state === 'laddar' ? `Spelets AI laddas: ${st.text || ''}` : 'Spelets AI är avstängd – klicka för att starta';
 }
 document.addEventListener('bpm:localai', () => { paintAiChip(document.getElementById('aichip')); if (localStatus().state === 'klar' && UI.page === 'stab' && !UI.busy && !document.querySelector('.modal, .aa')) { const ta = document.querySelector('.chatin textarea'); if (!ta || !ta.value) renderShell(); } });
 

@@ -43,7 +43,22 @@ export function policyCandidates(text, max = 14) {
   return [...score.entries()].sort((a, b) => b[1] - a[1]).slice(0, max).map(([id, sim]) => ({ p: POLICY_BY_ID[id], sim }));
 }
 const snap = (p, v) => { v = Math.max(p.min, Math.min(p.max, v)); const r = Math.round(v / p.step) * p.step; return Number.isInteger(p.step) ? Math.round(r) : Math.round(r * 100) / 100; };
-const UP = /(höj|öka|mer |fler|utök|bygg|satsa|stärk|fördubbl|dubbl|större|höga|högre|\bny\b|\bnya\b|\bnytt\b)/; const DOWN = /(sänk|minsk|färre|mindre|skär|halver|avveckl|lägre|stryp|ta bort|dra ned|dra ner)/;
+// Riktning: höj/skärp/hårdare = upp, sänk/minska/mildare = ned. "skär ned" är ned men "skärp" är upp.
+const UP = /(höj|öka|utök|stärk|fördubbl|dubbl|större|högre|hårdare|strängare|skärp|tuffare|förläng|bygg|satsa|\bfler\b|\bmer\b|\bny\b|\bnya\b|\bnytt\b)/;
+const UP_HARD = /(höj|öka|utök|fördubbl|dubbl|större|högre|hårdare|strängare|skärp|tuffare|förläng)/; // skatter och avgifter: "satsa på" betyder inte "höj avgiften"
+const DOWN = /(sänk|minsk|färre|mindre|halver|avveckl|lägre|mildare|kortare|förkort|stryp|ta bort|dra ned|dra ner|skär ned|skär ner|skära ned|skära ner|nedskär)/;
+const isTaxLike = (p) => !p.budget && /skatt|avgift|moms/i.test(p.name);
+export function dirOf(text, strict = false) {
+  const t = String(text || '').toLowerCase();
+  if (/för (låg|lite\b|få\b|svag|mild|kort)/.test(t)) return 1;
+  if (/för (hög|mycket|många|hård|sträng|lång)/.test(t)) return -1;
+  const u = t.search(strict ? UP_HARD : UP), d = t.search(DOWN);
+  if (u < 0 && d < 0) return 0;
+  let dir = d < 0 || (u >= 0 && u < d) ? 1 : -1; // det första riktningsordet gäller ("sänk straffen, fängelser gör folk mer kriminella")
+  const at = dir > 0 ? u : d;
+  if (/\b(inte|ej|aldrig)\s+(\S+\s+){0,2}$/.test(t.slice(Math.max(0, at - 30), at))) dir = -dir; // "vi ska inte skärpa straffen"
+  return dir;
+}
 const numIn = (s) => { const m = wordsToDigits(s.toLowerCase()).replace(/(\d)\s(?=\d{3}\b)/g, '$1').match(/(\d+(?:[.,]\d+)?)/); return m ? parseFloat(m[1].replace(',', '.')) : null; };
 // Nyckelord i meningen → nyckelord i alternativets namn; tredje ledet = motsatsord som diskvalificerar
 const KW = [
@@ -64,11 +79,14 @@ function choiceFromText(p, s, minDice = .18) {
     const c = p.options.map((o) => { const nm = o.name.toLowerCase(); const m = nm.search(opt); return { o, sc: m < 0 ? -9 : dice(g, trigrams(nm)) + .4 * (1 - m / Math.max(1, nm.length)) - (anti.test(nm) ? .6 : 0) }; }).filter((x) => x.sc > -1).sort((a, b) => b.sc - a.sc);
     if (c.length && c[0].sc > 0) return c[0].o.id;
   }
-  // ord som bara finns i ett av alternativen ("teokrati", "enpartistat", "junta") avgör
+  // ord som bara finns i ett av alternativen ("teokrati", "enpartistat", "junta") avgör – men ett
+  // ytterlighetsalternativ väljs bara när meningen faktiskt kräver något ("inför", "avskaffa" …), inte när
+  // ordet bara nämns ("fängelser gör folk mer kriminella" ≠ "avskaffa fängelserna")
+  const demands = /inför|avskaffa|förbjud|stoppa|tillåt|bygg|kräv|ersätt|gör om|ska bli|vill ha|ja till/.test(t);
   const st = (w) => w.slice(0, 6); const sw = new Set(t.replace(/[^a-zåäöé ]+/g, ' ').split(/\s+/).filter((w) => w.length >= 5).map(st));
   const ow = p.options.map((o) => new Set(o.name.toLowerCase().replace(/[^a-zåäöé ]+/g, ' ').split(/\s+/).filter((w) => w.length >= 5).map(st)));
   let bo = null, bn = 0;
-  p.options.forEach((o, i) => { let n = 0; for (const w of ow[i]) if (sw.has(w) && ow.filter((x) => x.has(w)).length === 1) n++; if (n > bn) { bn = n; bo = o.id; } });
+  p.options.forEach((o, i) => { if ((o.x || (o.ext || 0) >= 2) && !demands) return; let n = 0; for (const w of ow[i]) if (sw.has(w) && ow.filter((x) => x.has(w)).length === 1) n++; if (n > bn) { bn = n; bo = o.id; } });
   if (bo) return bo;
   let best = null, bs = minDice;
   for (const o of p.options) { const d = dice(g, trigrams(o.name)); if (d > bs) { bs = d; best = o.id; } }
@@ -90,8 +108,9 @@ export function heuristicPolicyMap(text, program = {}) {
         const n = numIn(s);
         const nn = n != null && p.unit === 'tusen' && n > p.max && n >= 1000 ? n / 1000 : n;
         if (nn != null && nn >= p.min && nn <= p.max) to = snap(p, nn);
-        else if (UP.test(t)) to = snap(p, cur + (p.max - p.min) * .15);
-        else if (DOWN.test(t)) to = snap(p, cur - (p.max - p.min) * .15);
+        else if (/fördubbl|dubbla|dubblera/.test(t) && cur > 0) to = snap(p, cur * 2);
+        else if (/halver/.test(t) && cur > 0) to = snap(p, cur / 2);
+        else { const d = dirOf(t, isTaxLike(p)); if (d) to = snap(p, cur + d * (p.max - p.min) * .15); }
       }
       if (to != null) { if (to !== cur) out.set(p.id, { id: p.id, from: cur, to, why: s }); break; } // redan så i programmet = träff, gå inte vidare till sämre kandidater
     }
@@ -103,8 +122,7 @@ function parseValue(p, varde, cur) {
   if (p.type === 'choice') { const exact = p.options.find((o) => o.id === v || o.name.toLowerCase() === v); if (exact) return exact.id; return choiceFromText(p, v); }
   const n0 = numIn(v); const n = n0 != null && p.unit === 'tusen' && n0 > p.max && n0 >= 1000 ? n0 / 1000 : n0;
   if (n != null) return snap(p, n);
-  if (UP.test(v)) return snap(p, cur + (p.max - p.min) * .15);
-  if (DOWN.test(v)) return snap(p, cur - (p.max - p.min) * .15);
+  const d = dirOf(v, isTaxLike(p)); if (d) return snap(p, cur + d * (p.max - p.min) * .15);
   return null;
 }
 // Huvudfunktionen. Returnerar [{ id, from, to, why }] och vilken metod som användes.

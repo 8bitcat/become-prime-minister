@@ -7,13 +7,15 @@
 const WEBLLM = 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.85/+esm';
 const KEY = 'bpm_local_ai';
 export const LOCAL_MODELS = [
-  { id: 'Qwen3.5-9B-q4f16_1-MLC', name: 'Störst – Qwen3.5 9B', size: '≈ 5,1 GB', vram: 6500, desc: 'Förstår mest: ironi, berättelser, strategi. Kräver ett grafikkort med minst ~8 GB minne.' },
-  { id: 'Qwen3.5-4B-q4f16_1-MLC', name: 'Stor – Qwen3.5 4B', size: '≈ 2,4 GB', vram: 3900, desc: 'Bra förståelse och snabb. Grafikkort med minst ~4 GB minne.' },
+  { id: 'Qwen3.5-9B-q4f16_1-MLC', name: 'Störst – Qwen3.5 9B', size: '≈ 5,1 GB', vram: 6500, desc: 'Lite bättre svenska men flera gånger långsammare. Kräver ett grafikkort med minst ~8 GB ledigt minne.' },
+  { id: 'Qwen3.5-4B-q4f16_1-MLC', name: 'Snabb – Qwen3.5 4B', size: '≈ 2,4 GB', vram: 3900, desc: 'Förstår det du skriver lika bra och svarar snabbt. Grafikkort med minst ~4 GB minne.' },
   { id: 'Qwen3.5-2B-q4f16_1-MLC', name: 'Mellan – Qwen3.5 2B', size: '≈ 1,1 GB', vram: 2300, desc: 'För bärbara datorer med inbyggd grafik.' },
   { id: 'Qwen3.5-0.8B-q4f16_1-MLC', name: 'Liten – Qwen3.5 0.8B', size: '≈ 0,5 GB', vram: 1700, desc: 'För svaga datorer och mobiler. Förstår enklare text.' },
 ];
-// Modeller vi provat i Ollama, i den ordning spelet föredrar dem när flera finns installerade
-export const SERVER_PREFS = ['gemma4:12b', 'qwen3.5:9b', 'gemma3:12b', 'qwen3:14b', 'qwen3.5:4b', 'gemma4:e4b', 'qwen3:8b'];
+// Modeller vi provat i Ollama, i den ordning spelet föredrar dem när flera finns installerade. Snabbhet går
+// före storlek: Gemma 4 E4B klarar spelets analystest lika bra som de stora (8/8), svarar på 1,5 s och tar
+// bara ~3,4 GB grafikminne – de stora blir mycket långsamma när andra program (Chrome, Office) tar minnet.
+export const SERVER_PREFS = ['gemma4:e4b', 'qwen3.5:4b', 'gemma4:12b', 'qwen3.5:9b', 'gemma3:12b', 'qwen3:14b', 'qwen3:8b'];
 export const DEFAULT_SERVER = 'http://localhost:11434';
 export function localSettings() { const d = { enabled: false, model: null, asked: false, server: { on: false, url: DEFAULT_SERVER, model: null } }; try { const s = { ...d, ...(JSON.parse(localStorage.getItem(KEY) || 'null') || {}) }; s.server = { ...d.server, ...(s.server || {}) }; return s; } catch { return d; } }
 export function saveLocalSettings(s) { try { localStorage.setItem(KEY, JSON.stringify({ ...localSettings(), ...s })); } catch { /* privat läge */ } }
@@ -42,7 +44,9 @@ async function networkPermission() {
 const BLOCKED = 'Webbläsaren nekar spelet att nå din dator. Klicka på symbolen till vänster om adressfältet → Webbplatsinställningar → "Lokalt nätverk" → Tillåt, och ladda om sidan.';
 // Vilka modeller finns i Ollama? Kastar ett begripligt fel om servern inte svarar eller nekar spelet.
 export async function probeServer(url = DEFAULT_SERVER) {
-  const u = cleanUrl(url); const to = withTimeout(4000);
+  // väntar Chrome/Edge på att spelaren svarar på frågan om lokalt nätverk får anropet ta tid
+  const u = cleanUrl(url); const perm = typeof navigator !== 'undefined' && navigator.permissions ? await networkPermission() : null;
+  const to = withTimeout(perm === 'prompt' && !/^http:\/\/(localhost|127\.)/.test(typeof location !== 'undefined' ? location.origin : '') ? 60000 : 4000);
   try {
     const r = await fetch(u + '/api/tags', { signal: to.signal });
     if (r.status === 403) throw new Error('Ollama nekar spelet. Sätt miljövariabeln OLLAMA_ORIGINS så att den tillåter ' + location.origin + ' och starta om Ollama.');
@@ -59,6 +63,8 @@ export async function probeServer(url = DEFAULT_SERVER) {
 export const pickServerModel = (models, wanted) => (models.find((m) => m.id === wanted) || SERVER_PREFS.map((p) => models.find((m) => m.id === p)).find(Boolean) || models[0] || null)?.id || null;
 // Anslut: kontrollera servern, välj modell och väck den (första anropet laddar modellen i grafikminnet)
 export function connectServer(url = DEFAULT_SERVER, model = null) {
+  // v0.9: tidigare förval (Gemma 4 12B) byts mot det nya, snabba förvalet – en gång
+  if (localSettings().serverV !== 2) { if (model === 'gemma4:12b') model = null; saveLocalSettings({ serverV: 2 }); }
   loading = (async () => {
     status = { state: 'laddar', progress: 5, text: 'Söker Ollama på din dator …', model: 'server' }; emit();
     const { url: u, models } = await probeServer(url);
@@ -68,7 +74,10 @@ export function connectServer(url = DEFAULT_SERVER, model = null) {
     if (engine) { try { await engine.unload(); } catch { /* ok */ } engine = null; }
     server = { url: u, model: id };
     await serverChat([{ role: 'user', content: 'Svara bara: ok' }], { max: 4, temp: 0 });
-    status = { state: 'klar', progress: 100, text: 'Redo', model: id, via: 'server' }; emit();
+    // får modellen inte plats i grafikminnet körs en del på processorn – då blir den många gånger långsammare
+    let warn = null;
+    try { const ps = await (await fetch(u + '/api/ps')).json(); const m = (ps.models || []).find((x) => x.name === id || x.model === id); if (m && m.size && m.size_vram < m.size * .95) warn = `${id} får inte plats i grafikminnet (${Math.round(m.size_vram / m.size * 100)} % ryms) och blir långsam. Stäng program som använder grafikkortet eller välj en mindre modell.`; } catch { /* äldre Ollama */ }
+    status = { state: 'klar', progress: 100, text: warn || 'Redo', warn, model: id, via: 'server' }; emit();
     saveLocalSettings({ server: { on: true, url: u, model: id } });
     return true;
   })().catch((e) => { server = null; loading = null; status = { state: 'fel', progress: 0, text: e.message, model: 'server' }; emit(); throw e; });
@@ -81,7 +90,7 @@ async function serverChat(messages, { schema = null, max = 300, temp = .6, penal
   const to = setTimeout(() => ctl.abort(), 120000);
   try {
     // JSON-svar utan upprepningsstraff: straffen hindrar modellen från att återanvända ord den just skrivit ("ekonomi" → "ekonomi: lägre skatt")
-    const body = { model: server.model, messages, stream: false, think: false, keep_alive: '30m', options: schema ? { temperature: temp, top_p: .9, num_predict: max, num_ctx: 8192 } : { temperature: temp, top_p: .9, num_predict: max, presence_penalty: penalty * .3, frequency_penalty: penalty * .5, num_ctx: 8192 } };
+    const body = { model: server.model, messages, stream: false, think: false, keep_alive: '10m', options: schema ? { temperature: temp, top_p: .9, num_predict: max, num_ctx: 4096 } : { temperature: temp, top_p: .9, num_predict: max, presence_penalty: penalty * .3, frequency_penalty: penalty * .5, num_ctx: 4096 } };
     if (schema) body.format = schema;
     if (/gemma4/i.test(server.model)) body.options.draft_num_predict = 0; // Ollama 0.35: Gemma 4:s utkastmodell kraschar på Windows
     const r = await fetch(server.url + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal });
@@ -104,7 +113,8 @@ export async function probeDevice() {
     // eget grafikkort (NVIDIA/AMD) av nyare generation → störst; Apple Silicon → stor; inbyggd grafik → mellan; mobil → liten
     const discreteNew = /nvidia|amd/.test(vendor) && /lovelace|ampere|blackwell|ada|rdna-?[34]|rdna3|rdna4/.test(arch);
     const discrete = /nvidia|amd/.test(vendor) && a.limits.maxBufferSize >= 2 ** 30;
-    const rec = mobile ? LOCAL_MODELS[3] : discreteNew ? LOCAL_MODELS[0] : discrete || /apple/.test(vendor) ? LOCAL_MODELS[1] : LOCAL_MODELS[2];
+    // 4B är förval även på starka grafikkort: lika bra på spelets uppgifter och flera gånger snabbare än 9B
+    const rec = mobile ? LOCAL_MODELS[3] : discreteNew || discrete || /apple/.test(vendor) ? LOCAL_MODELS[1] : LOCAL_MODELS[2];
     return { ok: f16, reason: f16 ? null : 'Grafikkortet saknar stöd för 16-bitars beräkningar (shader-f16).', vendor: info.vendor, arch: info.architecture, mobile, recommended: rec.id };
   } catch (e) { return { ok: false, reason: e.message }; }
 }
@@ -156,15 +166,18 @@ export function closeJSON(t) {
 // Upprepningar ("hårt hårt hårt …") som små modeller ibland fastnar i
 export function tidy(t) { return String(t || '').replace(/\b(\p{L}+)(?:[\s,]+\1\b){2,}/giu, '$1').replace(/(.{12,}?)\1{2,}/g, '$1').replace(/\s{2,}/g, ' ').trim(); }
 // En fråga i taget till modellen (kö). schema → JSON enligt schemat (grammatikstyrt), annars fri text.
-export function localChat(messages, { schema = null, max = 300, temp = .6, penalty = .4, low = false } = {}) {
+// Vad modellen håller på med – visas bredvid snurran
+const taskOf = (schema) => { const p = schema?.properties || {}; return p.sammanfattning ? 'Läser vad du skrev' : p.repliker ? 'Formulerar svar' : p.svar ? 'Skriver svar' : p.andringar ? 'Tolkar din politik' : p.beslut ? 'Motparten väger ditt bud' : schema ? 'Tänker' : 'Skriver'; };
+export function localChat(messages, { schema = null, max = 300, temp = .6, penalty = .4, low = false, task = null } = {}) {
   const run = async () => {
+    const busy = { busy: true, low, task: task || taskOf(schema), since: Date.now() };
     if (!localReady()) throw new Error('Den lokala modellen är inte laddad');
-    if (server) { status = { ...status, busy: true }; emit(); try { return await serverChat(messages, { schema, max, temp, penalty, low }); } finally { status = { ...status, busy: false }; emit(); } }
+    if (server) { status = { ...status, ...busy }; emit(); try { return await serverChat(messages, { schema, max, temp, penalty, low }); } finally { status = { ...status, busy: false, low: false }; emit(); } }
     const req = { messages: prep(messages, status.model), max_tokens: max, temperature: temp, top_p: .9, frequency_penalty: penalty, presence_penalty: penalty * .5, repetition_penalty: 1.08, extra_body: { enable_thinking: false } };
     if (schema) req.response_format = { type: 'json_object', schema: JSON.stringify(schema) };
-    status = { ...status, busy: true }; emit();
+    status = { ...status, ...busy }; emit();
     try { const r = await engine.chat.completions.create(req); const fin = r.choices[0].finish_reason; const txt = (r.choices[0].message.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim(); return schema && fin === 'length' ? closeJSON(txt) : txt; }
-    finally { status = { ...status, busy: false }; emit(); }
+    finally { status = { ...status, busy: false, low: false }; emit(); }
   };
   const p = queue.then(run, run); queue = p.catch(() => {}); return p;
 }

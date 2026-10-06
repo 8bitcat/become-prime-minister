@@ -24,14 +24,17 @@ den inbyggda analysen: en kunskapsbas med nära 2 000 svenska formuleringar som 
 för mening. Claude med egen nyckel finns kvar som dolt tillval och används aldrig annars.
 
 **Modellen i Ollama på den egna datorn** (snabbare och större modeller än i webbläsaren, fortfarande
-utan nyckel och utan att något lämnar datorn). Testat med Gemma 4 12B (förval, bäst nyanser, ca 4 s
-per analys) och Qwen3.5 9B (snabbast, ca 2 s) på ett RTX 4070 – båda klarar spelets analystest 8/8.
+utan nyckel och utan att något lämnar datorn). Förval: **Gemma 4 E4B** – klarar spelets analystest 8/8,
+svarar på ca 1,5 s och tar bara ~3,4 GB grafikminne. Gemma 4 12B och Qwen3.5 9B är inte bättre på spelets
+uppgifter men behöver 6–8 GB och blir många gånger långsammare när andra program (Chrome, Office) använder
+grafikkortet – modellen hamnar då delvis på processorn. Spelet varnar när det händer.
 
 ```powershell
 winget install Ollama.Ollama
 setx OLLAMA_ORIGINS "https://8bitcat.github.io,http://localhost:*,http://127.0.0.1:*"
 # starta om Ollama (avsluta i systemfältet och öppna igen) så att den läser in OLLAMA_ORIGINS
-ollama pull gemma4:12b      # eller qwen3.5:9b
+setx OLLAMA_MAX_LOADED_MODELS 1   # högst en modell i grafikminnet åt gången
+ollama pull gemma4:e4b      # snabb (förval); gemma4:12b eller qwen3.5:9b om grafikminnet räcker
 ```
 
 Öppna sedan spelet med `?ollama` (https://8bitcat.github.io/become-prime-minister/?ollama) eller

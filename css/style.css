@@ -416,3 +416,14 @@ kbd { background: var(--bg2); border: 1px solid var(--line); border-radius: 4px;
 .polsum { margin-bottom: 12px; }
 @media (max-width: 760px) { .axis.xaxis { grid-template-columns: 1fr; } .axis.xaxis .l, .axis.xaxis .r { text-align: left; } }
 .axis .name span.danger { color: #ff7a7f; }
+
+/* v0.9 snurra medan spelets AI arbetar */
+@keyframes spin { to { transform: rotate(360deg) } }
+.spin { display: inline-block; width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.22); border-top-color: var(--gold); border-radius: 50%; animation: spin .75s linear infinite; vertical-align: -2px; flex: 0 0 auto; }
+.spin.sm { width: 11px; height: 11px; border-width: 2px; margin-right: 4px; }
+.aibusy { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; align-items: center; gap: 9px; max-width: calc(100vw - 32px); padding: 7px 14px; border-radius: 999px; background: rgba(10,16,30,.94); border: 1px solid var(--gold); color: #fff; font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.45); pointer-events: none; animation: fadeIn .2s ease; }
+.aibusy[hidden] { display: none; }
+.aibusy .s { color: var(--gold); font-variant-numeric: tabular-nums; }
+.aibusy .h { color: #ffb4b6; } .aibusy .h:empty { display: none; }
+.aa .textbox .spin { width: 18px; height: 18px; }
+.aa .textbox .tsec { opacity: .6; font-size: .8em; }
